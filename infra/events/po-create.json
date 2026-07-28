@@ -1,0 +1,15 @@
+{
+  "httpMethod": "POST",
+  "path": "/api/po",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "pathParameters": null,
+  "queryStringParameters": null,
+  "body": "{\"date\":\"2024-11-30\",\"clientName\":\"Test Client\",\"osgPiNo\":12345,\"osgPiDate\":\"2024-11-28\",\"clientPoNo\":67890,\"clientPoDate\":\"2024-11-25\",\"poStatus\":\"po_received\",\"noOfDispatch\":\"single\",\"clientAddress\":\"123 Test Street\",\"clientContact\":\"+91-9876543210\",\"poItems\":[{\"category\":\"Electronics\",\"oemName\":\"Samsung\",\"product\":\"LED Panel\",\"quantity\":10,\"spareQuantity\":2,\"totalQuantity\":12,\"pricePerUnit\":5000,\"totalPrice\":60000,\"warranty\":\"2 years\"}],\"dispatchPlanDate\":\"2024-12-15\",\"siteLocation\":\"Mumbai\",\"oscSupport\":\"yes\",\"confirmDateOfDispatch\":\"2024-12-10\",\"paymentStatus\":\"pending\",\"remarks\":\"Test order\"}",
+  "requestContext": {
+    "requestId": "test-request-id",
+    "stage": "dev"
+  }
+}
+

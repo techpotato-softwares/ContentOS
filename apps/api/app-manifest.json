@@ -1,0 +1,71 @@
+{
+  "version": "2.0.0",
+  "runtime": "python",
+  "generatedAt": "2026-07-28T00:00:00Z",
+  "lambdas": {
+    "auth": {
+      "handler": "modules.platform.lambdas.auth.handler",
+      "controller": "AuthController",
+      "routes": [
+        { "method": "POST", "path": "/api/login", "controller": "AuthController", "action": "login" },
+        { "method": "POST", "path": "/api/auth/refresh", "controller": "AuthController", "action": "refresh" },
+        { "method": "POST", "path": "/api/register", "controller": "AuthController", "action": "register" },
+        { "method": "GET", "path": "/api/me", "controller": "AuthController", "action": "me" }
+      ]
+    },
+    "tenants": {
+      "handler": "modules.tenants.lambdas.tenants.handler",
+      "controller": "TenantsController",
+      "routes": [
+        { "method": "GET", "path": "/api/admin/tenants", "controller": "TenantsController", "action": "list_tenants" },
+        { "method": "POST", "path": "/api/admin/tenants", "controller": "TenantsController", "action": "create_tenant" },
+        { "method": "GET", "path": "/api/tenants/me", "controller": "TenantsController", "action": "get_my_tenant" },
+        { "method": "GET", "path": "/api/tenants/me/theme", "controller": "TenantsController", "action": "get_theme" },
+        { "method": "GET", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "get_training" },
+        { "method": "PUT", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "put_training" },
+        { "method": "GET", "path": "/api/admin/tenants/{tenantId}/training", "controller": "TenantsController", "action": "admin_get_training" },
+        { "method": "PUT", "path": "/api/admin/tenants/{tenantId}/training", "controller": "TenantsController", "action": "admin_put_training" },
+        { "method": "GET", "path": "/api/admin/tenants/{tenantId}/training/preview", "controller": "TenantsController", "action": "training_preview" },
+        { "method": "POST", "path": "/api/admin/tenants/{tenantId}/training/rebuild", "controller": "TenantsController", "action": "training_rebuild" },
+        { "method": "GET", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "list_docs" },
+        { "method": "POST", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "create_doc" },
+        { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" }
+      ]
+    },
+    "agent": {
+      "handler": "modules.agent.lambdas.agent.handler",
+      "controller": "AgentController",
+      "routes": [
+        { "method": "POST", "path": "/api/agent/sessions", "controller": "AgentController", "action": "create_session" },
+        { "method": "GET", "path": "/api/agent/sessions", "controller": "AgentController", "action": "list_sessions" },
+        { "method": "GET", "path": "/api/agent/sessions/{sessionId}/messages", "controller": "AgentController", "action": "get_messages" },
+        { "method": "POST", "path": "/api/agent/chat", "controller": "AgentController", "action": "chat" },
+        { "method": "POST", "path": "/api/agent/generate", "controller": "AgentController", "action": "generate" },
+        { "method": "GET", "path": "/api/agent/batches/{id}", "controller": "AgentController", "action": "get_batch" },
+        { "method": "GET", "path": "/api/agent/insights/suggestions", "controller": "AgentController", "action": "insights_suggestions" },
+        { "method": "GET", "path": "/api/agent/insights/news", "controller": "AgentController", "action": "insights_news" },
+        { "method": "GET", "path": "/api/agent/insights/analytics", "controller": "AgentController", "action": "insights_analytics" }
+      ]
+    },
+    "publishing": {
+      "handler": "modules.publishing.lambdas.publishing.handler",
+      "controller": "PublishingController",
+      "routes": [
+        { "method": "GET", "path": "/api/social/linkedin/connect", "controller": "PublishingController", "action": "linkedin_connect" },
+        { "method": "GET", "path": "/api/social/linkedin/callback", "controller": "PublishingController", "action": "linkedin_callback" },
+        { "method": "GET", "path": "/api/social/linkedin/status", "controller": "PublishingController", "action": "linkedin_status" },
+        { "method": "GET", "path": "/api/posts", "controller": "PublishingController", "action": "list_posts" },
+        { "method": "POST", "path": "/api/posts/{id}/submit-review", "controller": "PublishingController", "action": "submit_review" },
+        { "method": "POST", "path": "/api/posts/{id}/approve", "controller": "PublishingController", "action": "approve" },
+        { "method": "POST", "path": "/api/posts/{id}/reject", "controller": "PublishingController", "action": "reject" },
+        { "method": "POST", "path": "/api/posts/{id}/publish", "controller": "PublishingController", "action": "publish" }
+      ]
+    }
+  },
+  "modules": {
+    "platform": { "sku": "platform", "lambdas": ["auth"] },
+    "tenants": { "sku": "tenants", "lambdas": ["tenants"] },
+    "agent": { "sku": "agent", "lambdas": ["agent"] },
+    "publishing": { "sku": "publishing", "lambdas": ["publishing"] }
+  }
+}

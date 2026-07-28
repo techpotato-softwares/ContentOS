@@ -1,0 +1,40 @@
+[project]
+name = "contentos"
+version = "0.1.0"
+description = "ContentOS — B2B LinkedIn image content API"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "mangum>=0.19.0",
+  "sqlalchemy>=2.0.0",
+  "sqlmodel>=0.0.22",
+  "alembic>=1.13.0",
+  "psycopg2-binary>=2.9.9",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "PyJWT>=2.8.0",
+  "passlib[bcrypt]>=1.7.4",
+  "bcrypt<4.1",
+  "boto3>=1.34.0",
+  "python-multipart>=0.0.9",
+  "httpx>=0.27.0",
+  "dependency-injector>=4.41.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
+ai = ["langchain-core>=0.2.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["layers/shared/python/src", "modules", "."]
+include = ["arcforge_shared*", "config*", "database*", "decorators*", "core*", "middleware*", "utils*", "training*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["layers/shared/python/src", "."]

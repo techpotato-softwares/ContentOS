@@ -1,0 +1,24 @@
+{
+  "name": "contentos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ContentOS — B2B LinkedIn image content operating system",
+  "scripts": {
+    "dev": "npm run dev:api",
+    "dev:api": "cd apps/api && .venv/bin/uvicorn src.dev_server:app --reload --port 4001",
+    "dev:web": "cd apps/web && npm run dev",
+    "install:api": "cd apps/api && python3 -m venv .venv && .venv/bin/pip install -U pip setuptools wheel && .venv/bin/pip install -e '.[dev]'",
+    "install:web": "cd apps/web && npm install",
+    "install:infra": "cd infra && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "build:layer": "cd apps/api && .venv/bin/python layers/shared/python/scripts/build_layer.py",
+    "build:web": "cd apps/web && npm run build",
+    "db:init": "cd apps/api && .venv/bin/python scripts/seed.py",
+    "test": "cd apps/api && .venv/bin/python -m pytest",
+    "synth:dev": "npm run build:layer && cd infra && ./scripts/deploy.sh dev synth",
+    "deploy:dev": "npm run build:layer && cd infra && ./scripts/deploy.sh dev deploy",
+    "deploy:qa": "npm run build:layer && cd infra && ./scripts/deploy.sh qa deploy"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

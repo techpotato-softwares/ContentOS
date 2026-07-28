@@ -1,0 +1,23 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# CDK
+cdk.out/
+
+# Node leftover (CLI may still create)
+node_modules/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Secrets
+env.*.json
+!env.template.json
+
+*.log

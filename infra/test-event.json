@@ -1,0 +1,9 @@
+{
+  "httpMethod": "GET",
+  "path": "/api/po",
+  "resource": "/api/po",
+  "pathParameters": null,
+  "queryStringParameters": null,
+  "body": null
+}
+

@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+}
+
+:root {
+  --background: #f4f7f6;
+  --foreground: #0f1c1a;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-foreground: #0f1c1a;
+  --primary: #0d9488;
+  --primary-foreground: #f0fdfa;
+  --secondary: #134e4a;
+  --secondary-foreground: #ecfdf5;
+  --muted: #e2e8e6;
+  --muted-foreground: #5b6b68;
+  --accent: #2dd4bf;
+  --accent-foreground: #042f2e;
+  --border: rgba(15, 28, 26, 0.1);
+  --ring: #0d9488;
+  --destructive: #dc2626;
+  --shell-glow: radial-gradient(ellipse at 20% 0%, rgba(45, 212, 191, 0.22), transparent 50%),
+    radial-gradient(ellipse at 80% 10%, rgba(13, 148, 136, 0.18), transparent 45%),
+    linear-gradient(160deg, #eef5f3 0%, #f7faf9 40%, #e8f0ee 100%);
+}
+
+.dark {
+  --background: #071211;
+  --foreground: #e8f5f2;
+  --card: rgba(15, 28, 26, 0.72);
+  --card-foreground: #e8f5f2;
+  --primary: #2dd4bf;
+  --primary-foreground: #042f2e;
+  --secondary: #115e59;
+  --secondary-foreground: #ccfbf1;
+  --muted: #14302c;
+  --muted-foreground: #94a8a4;
+  --accent: #5eead4;
+  --accent-foreground: #042f2e;
+  --border: rgba(232, 245, 242, 0.12);
+  --ring: #2dd4bf;
+  --destructive: #f87171;
+  --shell-glow: radial-gradient(ellipse at 15% 0%, rgba(45, 212, 191, 0.15), transparent 50%),
+    radial-gradient(ellipse at 90% 5%, rgba(20, 184, 166, 0.12), transparent 40%),
+    linear-gradient(165deg, #061110 0%, #0a1a18 50%, #071413 100%);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--shell-glow);
+  background-attachment: fixed;
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.glass-panel {
+  background: var(--card);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+}
+
+.dark .glass-panel {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.shadow-elevated {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 50px rgba(0, 0, 0, 0.12);
+}
+
+.dark .shadow-elevated {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 22px 60px rgba(0, 0, 0, 0.45);
+}
+
+.shadow-glow {
+  box-shadow: 0 8px 28px rgba(45, 212, 191, 0.28);
+}
+
+.mesh-bg {
+  background:
+    radial-gradient(ellipse 60% 40% at 10% 20%, rgba(45, 212, 191, 0.12), transparent 55%),
+    radial-gradient(ellipse 50% 35% at 90% 10%, rgba(13, 148, 136, 0.1), transparent 50%),
+    radial-gradient(ellipse 40% 30% at 70% 90%, rgba(20, 184, 166, 0.08), transparent 45%);
+}
+
+.dark .mesh-bg {
+  background:
+    radial-gradient(ellipse 60% 40% at 10% 20%, rgba(45, 212, 191, 0.09), transparent 55%),
+    radial-gradient(ellipse 50% 35% at 90% 10%, rgba(13, 148, 136, 0.08), transparent 50%),
+    radial-gradient(ellipse 40% 30% at 70% 90%, rgba(20, 184, 166, 0.06), transparent 45%);
+}

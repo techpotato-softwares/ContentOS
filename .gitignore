@@ -1,0 +1,40 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+infra/env.local.json
+apps/api/.env
+apps/web/.env
+apps/web/.env.local
+apps/api/media/
+RequirementDocs/
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/.pytest_cache/
+**/*.egg-info/
+**/dist/
+**/.ruff_cache/
+
+# Node
+**/node_modules/
+apps/web/dist/
+
+# CDK / AWS
+infra/cdk.out/
+infra/.cdk.staging/
+**/bundled/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

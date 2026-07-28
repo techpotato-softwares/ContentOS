@@ -1,0 +1,18 @@
+{
+  "httpMethod": "GET",
+  "path": "/api/po",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "pathParameters": null,
+  "queryStringParameters": {
+    "page": "1",
+    "limit": "10"
+  },
+  "body": null,
+  "requestContext": {
+    "requestId": "test-request-id",
+    "stage": "dev"
+  }
+}
+
