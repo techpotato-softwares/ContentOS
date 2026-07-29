@@ -66,12 +66,22 @@ def _load_tokens(acct: SocialAccount) -> dict:
 
 
 def _post_dict(p: ContentPost) -> dict:
+    layout = None
+    if getattr(p, "layout_json", None):
+        try:
+            layout = json.loads(p.layout_json)
+        except Exception:
+            layout = None
     return {
         "postId": p.post_id,
         "batchId": p.batch_id,
         "angle": p.angle,
         "caption": p.caption,
         "imageUrl": p.image_url,
+        "layout": layout,
+        "headline": (layout or {}).get("headline"),
+        "subhead": (layout or {}).get("subhead"),
+        "bullets": (layout or {}).get("bullets"),
         "status": p.status,
         "linkedinPostId": p.linkedin_post_id,
         "publishedAt": p.published_at.isoformat() if p.published_at else None,

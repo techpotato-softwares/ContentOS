@@ -27,6 +27,9 @@
         { "method": "PUT", "path": "/api/admin/tenants/{tenantId}/training", "controller": "TenantsController", "action": "admin_put_training" },
         { "method": "GET", "path": "/api/admin/tenants/{tenantId}/training/preview", "controller": "TenantsController", "action": "training_preview" },
         { "method": "POST", "path": "/api/admin/tenants/{tenantId}/training/rebuild", "controller": "TenantsController", "action": "training_rebuild" },
+        { "method": "POST", "path": "/api/tenants/me/brand/logo", "controller": "TenantsController", "action": "upload_logo" },
+        { "method": "DELETE", "path": "/api/tenants/me/brand/logo", "controller": "TenantsController", "action": "delete_logo" },
+        { "method": "POST", "path": "/api/admin/tenants/{tenantId}/brand/logo", "controller": "TenantsController", "action": "admin_upload_logo" },
         { "method": "GET", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "list_docs" },
         { "method": "POST", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "create_doc" },
         { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" }
@@ -39,6 +42,7 @@
         { "method": "POST", "path": "/api/agent/sessions", "controller": "AgentController", "action": "create_session" },
         { "method": "GET", "path": "/api/agent/sessions", "controller": "AgentController", "action": "list_sessions" },
         { "method": "GET", "path": "/api/agent/sessions/{sessionId}/messages", "controller": "AgentController", "action": "get_messages" },
+        { "method": "GET", "path": "/api/agent/image-models", "controller": "AgentController", "action": "image_models" },
         { "method": "POST", "path": "/api/agent/chat", "controller": "AgentController", "action": "chat" },
         { "method": "POST", "path": "/api/agent/generate", "controller": "AgentController", "action": "generate" },
         { "method": "GET", "path": "/api/agent/batches/{id}", "controller": "AgentController", "action": "get_batch" },

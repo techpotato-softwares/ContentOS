@@ -30,6 +30,33 @@ export type ContentPost = {
   imageUrl?: string
   status: string
   linkedinPostId?: string
+  headline?: string
+  subhead?: string
+  bullets?: string[]
+  layout?: {
+    headline?: string
+    subhead?: string
+    bullets?: string[]
+    caption?: string
+  }
+}
+
+export type ImageModelInfo = {
+  id: string
+  label: string
+  provider: string
+  nativeTextQuality: string
+  bestFor: string
+  supportedSizes: string[]
+  costHint: string
+  available: boolean
+}
+
+export type ImageModelsPayload = {
+  models: ImageModelInfo[]
+  presets: { id: string; width: number; height: number }[]
+  defaultPreset: string
+  defaultRenderMode: string
 }
 
 export type ChatSessionRow = {
@@ -109,6 +136,34 @@ export const contentApi = createApi({
       }),
       invalidatesTags: ["Training", "Theme"],
     }),
+    uploadLogo: build.mutation<
+      { logoUrl: string; training?: TenantTrainingSchema },
+      { imageBase64: string; contentType: string; filename?: string; tenantId?: number }
+    >({
+      query: ({ tenantId, ...body }) => ({
+        url: tenantId
+          ? `/api/admin/tenants/${tenantId}/brand/logo`
+          : "/api/tenants/me/brand/logo",
+        method: "POST",
+        body: tenantId ? { ...body, tenantId } : body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Training", "Theme"],
+    }),
+    deleteLogo: build.mutation<{ deleted: boolean }, number | void>({
+      query: (tenantId) => ({
+        url: tenantId
+          ? `/api/tenants/me/brand/logo?tenantId=${tenantId}`
+          : "/api/tenants/me/brand/logo",
+        method: "DELETE",
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Training", "Theme"],
+    }),
+    getImageModels: build.query<ImageModelsPayload, void>({
+      query: () => "/api/agent/image-models",
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
     previewTraining: build.query<
       { training: TenantTrainingSchema; contextPack: string; version: number },
       number
@@ -137,8 +192,21 @@ export const contentApi = createApi({
       invalidatesTags: ["Sessions"],
     }),
     generate: build.mutation<
-      { batchId: number; posts: ContentPost[] },
-      { brief: string; sessionId?: number; newsContext?: string }
+      {
+        batchId: number
+        posts: ContentPost[]
+        preset?: string
+        renderMode?: string
+        imageModel?: string
+      },
+      {
+        brief: string
+        sessionId?: number
+        newsContext?: string
+        preset?: string
+        renderMode?: string
+        imageModel?: string
+      }
     >({
       query: (body) => ({ url: "/api/agent/generate", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData(r),
@@ -205,6 +273,9 @@ export const {
   useCreateTenantMutation,
   useGetTrainingQuery,
   usePutTrainingMutation,
+  useUploadLogoMutation,
+  useDeleteLogoMutation,
+  useGetImageModelsQuery,
   useLazyPreviewTrainingQuery,
   useListSessionsQuery,
   useLazyGetSessionMessagesQuery,

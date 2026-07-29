@@ -260,6 +260,123 @@ class TenantsController:
             session.commit()
             return create_success_response({"version": t.context_pack_version, "length": len(pack)})
 
+    @Post("/tenants/me/brand/logo")
+    @RequireModule("tenants")
+    @RequirePermission("training:manage", "admin:tenants")
+    def upload_logo(self, data: dict, user=None, query: dict | None = None):
+        """Accept base64 image JSON (works with Lambda-style body). Max ~2MB decoded."""
+        import base64
+        from pathlib import Path
+
+        q = query or {}
+        requested = None
+        if (data or {}).get("tenantId"):
+            requested = int(data["tenantId"])
+        elif q.get("tenantId"):
+            requested = int(q["tenantId"])
+        tid = resolve_tenant_id(user, requested)
+        data = data or {}
+        b64 = (data.get("imageBase64") or data.get("data") or "").strip()
+        if "," in b64 and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1]
+        if not b64:
+            raise ValidationError("imageBase64 is required")
+        content_type = (data.get("contentType") or "image/png").lower()
+        ext_map = {
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/jpg": "jpg",
+            "image/webp": "webp",
+        }
+        ext = ext_map.get(content_type)
+        if not ext:
+            filename = (data.get("filename") or "logo.png").lower()
+            if filename.endswith(".jpg") or filename.endswith(".jpeg"):
+                ext = "jpg"
+            elif filename.endswith(".webp"):
+                ext = "webp"
+            else:
+                ext = "png"
+        try:
+            raw = base64.b64decode(b64)
+        except Exception as e:
+            raise ValidationError(f"Invalid base64 image: {e}")
+        if len(raw) > 2 * 1024 * 1024:
+            raise ValidationError("Logo must be under 2MB")
+        # Basic magic-byte check
+        if not (raw[:8] == b"\x89PNG\r\n\x1a\n" or raw[:2] == b"\xff\xd8" or raw[:4] == b"RIFF"):
+            # allow webp/png/jpeg loosely
+            pass
+
+        api_root = Path(__file__).resolve().parents[4]
+        media = api_root / "media" / "tenants" / str(tid) / "brand"
+        media.mkdir(parents=True, exist_ok=True)
+        # Clear other extensions
+        for old in media.glob("logo.*"):
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        dest = media / f"logo.{ext}"
+        dest.write_bytes(raw)
+        logo_url = f"/media/tenants/{tid}/brand/logo.{ext}"
+
+        with get_session() as session:
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            training = parse_training(t.training_json)
+            training.brand_visual.logo_url = logo_url
+            t.logo_url = logo_url
+            t.training_json = training.model_dump_json()
+            _apply_brand_columns(t, training)
+            _rebuild_pack(session, t)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=(user or {}).get("userId"),
+                action="brand.logo_upload",
+                resource_type="tenant",
+                resource_id=str(tid),
+                detail=logo_url,
+            )
+            session.commit()
+            return create_success_response({"logoUrl": logo_url, "training": training.model_dump()})
+
+    @Delete("/tenants/me/brand/logo")
+    @RequireModule("tenants")
+    @RequirePermission("training:manage", "admin:tenants")
+    def delete_logo(self, user=None, query: dict | None = None):
+        from pathlib import Path
+
+        q = query or {}
+        tid = resolve_tenant_id(user, int(q["tenantId"]) if q.get("tenantId") else None)
+        api_root = Path(__file__).resolve().parents[4]
+        media = api_root / "media" / "tenants" / str(tid) / "brand"
+        for old in media.glob("logo.*"):
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        with get_session() as session:
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            training = parse_training(t.training_json)
+            training.brand_visual.logo_url = ""
+            t.logo_url = None
+            t.training_json = training.model_dump_json()
+            _rebuild_pack(session, t)
+            session.commit()
+            return create_success_response({"logoUrl": None, "deleted": True})
+
+    @Post("/admin/tenants/{tenantId}/brand/logo")
+    @RequireModule("tenants")
+    @RequirePermission("admin:tenants")
+    def admin_upload_logo(self, tenantId: str, data: dict, user=None):
+        data = {**(data or {}), "tenantId": int(tenantId)}
+        return self.upload_logo(data=data, user=user, query={"tenantId": tenantId})
+
     @Get("/tenants/me/training/docs")
     @RequireModule("tenants")
     @RequirePermission("training:manage", "admin:tenants")

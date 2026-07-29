@@ -124,6 +124,7 @@ class ContentPost(SQLModel, table=True):
     angle: str  # educational | thought_leadership | product_value
     caption: str = Field(sa_column=Column(Text))
     image_prompt: str = Field(sa_column=Column(Text))
+    layout_json: Optional[str] = Field(default=None, sa_column=Column(Text))
     image_s3_key: Optional[str] = None
     image_url: Optional[str] = None
     # draft | pending_review | approved | rejected | published

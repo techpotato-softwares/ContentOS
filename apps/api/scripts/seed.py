@@ -55,6 +55,15 @@ ROLES = {
 
 def main():
     init_db()
+    # Ensure newer columns exist on existing DBs
+    try:
+        from sqlalchemy import text
+        from database import get_engine
+
+        with get_engine().begin() as conn:
+            conn.execute(text("ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS layout_json TEXT"))
+    except Exception:
+        pass
     with get_session() as session:
         perm_map: dict[str, int] = {}
         for code, name in PERMS:

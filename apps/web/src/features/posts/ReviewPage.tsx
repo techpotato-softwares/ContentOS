@@ -8,6 +8,44 @@ import {
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { PostMedia } from "@/shared/ui/PostMedia"
+import { cn } from "@/shared/lib/utils"
+
+const PIPELINE = ["draft", "pending_review", "approved", "published"] as const
+
+function StatusChips({ status }: { status: string }) {
+  const idx = PIPELINE.indexOf(status as (typeof PIPELINE)[number])
+  const labels: Record<string, string> = {
+    draft: "Draft",
+    pending_review: "In review",
+    approved: "Approved",
+    published: "Published",
+    rejected: "Rejected",
+  }
+  if (status === "rejected") {
+    return (
+      <span className="text-[10px] uppercase tracking-wide rounded-full px-2 py-0.5 bg-destructive/15 text-destructive">
+        Rejected
+      </span>
+    )
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {PIPELINE.map((s, i) => (
+        <span
+          key={s}
+          className={cn(
+            "text-[10px] uppercase tracking-wide rounded-full px-2 py-0.5 border",
+            i <= idx
+              ? "bg-primary/15 text-primary border-primary/30"
+              : "border-border text-muted-foreground",
+          )}
+        >
+          {labels[s]}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 export function ReviewPage() {
   const { data: posts = [], isLoading } = useListPostsQuery()
@@ -39,10 +77,15 @@ export function ReviewPage() {
               filename={`contentos-post-${p.postId}.png`}
             />
             <div className="p-4 pt-0 space-y-3">
-              <div className="flex justify-between text-xs">
+              <div className="flex justify-between items-start gap-2 text-xs">
                 <span className="text-primary uppercase">{p.angle}</span>
-                <span className="text-muted-foreground">{p.status}</span>
+                <StatusChips status={p.status} />
               </div>
+              {(p.headline || p.layout?.headline) && (
+                <h3 className="font-display text-lg leading-snug">
+                  {p.headline || p.layout?.headline}
+                </h3>
+              )}
               <p className="text-sm line-clamp-4 whitespace-pre-wrap">{p.caption}</p>
               <div className="flex flex-wrap gap-2">
                 {p.status === "draft" && (

@@ -4,10 +4,13 @@ import {
   useGetTrainingQuery,
   usePutTrainingMutation,
   useLazyPreviewTrainingQuery,
+  useUploadLogoMutation,
+  useDeleteLogoMutation,
 } from "@/features/api/contentApi"
 import { emptyTraining, type TenantTrainingSchema } from "@/shared/types/training"
 import { Button } from "@/components/ui/button"
 import { Input, Label, Textarea } from "@/components/ui/input"
+import { mediaSrc } from "@/shared/lib/media"
 
 function csv(v: string) {
   return v
@@ -16,14 +19,30 @@ function csv(v: string) {
     .filter(Boolean)
 }
 
+function fileToBase64(file: File): Promise<{ base64: string; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || "")
+      const base64 = result.includes(",") ? result.split(",", 1)[1] : result
+      resolve({ base64, contentType: file.type || "image/png" })
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
 export function TrainingPage({ adminTenantId }: { adminTenantId?: number }) {
   const params = useParams()
   const tenantId = adminTenantId ?? (params.id ? Number(params.id) : undefined)
   const { data, isLoading } = useGetTrainingQuery(tenantId)
   const [put, putState] = usePutTrainingMutation()
   const [preview, previewState] = useLazyPreviewTrainingQuery()
+  const [uploadLogo, uploadState] = useUploadLogoMutation()
+  const [deleteLogo, deleteState] = useDeleteLogoMutation()
   const [form, setForm] = useState<TenantTrainingSchema>(emptyTraining())
   const [pack, setPack] = useState("")
+  const [logoMsg, setLogoMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (data) {
@@ -49,7 +68,40 @@ export function TrainingPage({ adminTenantId }: { adminTenantId?: number }) {
     setPack(res.contextPack)
   }
 
+  const onLogoFile = async (file: File | null) => {
+    if (!file) return
+    setLogoMsg(null)
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoMsg("Logo must be under 2MB")
+      return
+    }
+    try {
+      const { base64, contentType } = await fileToBase64(file)
+      const res = await uploadLogo({
+        imageBase64: base64,
+        contentType,
+        filename: file.name,
+        tenantId,
+      }).unwrap()
+      setForm((f) => ({
+        ...f,
+        brand_visual: { ...f.brand_visual, logo_url: res.logoUrl },
+      }))
+      setLogoMsg("Logo uploaded — it will appear on generated posts.")
+    } catch {
+      setLogoMsg("Logo upload failed")
+    }
+  }
+
+  const onClearLogo = async () => {
+    await deleteLogo(tenantId).unwrap()
+    setForm((f) => ({ ...f, brand_visual: { ...f.brand_visual, logo_url: "" } }))
+    setLogoMsg("Logo removed")
+  }
+
   if (isLoading) return <p>Loading training…</p>
+
+  const logoPreview = mediaSrc(form.brand_visual.logo_url) || form.brand_visual.logo_url
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -101,6 +153,13 @@ export function TrainingPage({ adminTenantId }: { adminTenantId?: number }) {
             setForm({ ...form, messaging: { ...form.messaging, voice_donts: csv(v) } })
           }
         />
+        <Field
+          label="Banned claims (comma-separated)"
+          value={form.messaging.banned_claims.join(", ")}
+          onChange={(v) =>
+            setForm({ ...form, messaging: { ...form.messaging, banned_claims: csv(v) } })
+          }
+        />
         <div className="space-y-1">
           <Label>Approved facts (one per line)</Label>
           <Textarea
@@ -118,9 +177,45 @@ export function TrainingPage({ adminTenantId }: { adminTenantId?: number }) {
       <section className="space-y-3">
         <h2 className="font-display text-xl">Brand / UI theme</h2>
         <p className="text-xs text-muted-foreground">
-          White-label applies only when logo + all three colors are set and ui_mode is white_label;
-          otherwise the ContentOS platform theme is used.
+          Upload a logo to composite onto LinkedIn posts. White-label UI applies only when logo + all three
+          colors are set and ui_mode is white_label.
         </p>
+        <div className="rounded-2xl border border-border p-4 space-y-3 bg-background/40">
+          <Label>Company logo</Label>
+          <div className="flex flex-wrap items-center gap-4">
+            {logoPreview ? (
+              <img
+                src={logoPreview}
+                alt="Logo preview"
+                className="h-16 w-16 rounded-xl object-contain border border-border bg-muted"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-xl border border-dashed border-border flex items-center justify-center text-xs text-muted-foreground">
+                No logo
+              </div>
+            )}
+            <div className="space-y-2">
+              <Input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={uploadState.isLoading}
+                onChange={(e) => void onLogoFile(e.target.files?.[0] || null)}
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!form.brand_visual.logo_url || deleteState.isLoading}
+                  onClick={() => void onClearLogo()}
+                >
+                  Remove logo
+                </Button>
+              </div>
+            </div>
+          </div>
+          {logoMsg && <p className="text-xs text-muted-foreground">{logoMsg}</p>}
+        </div>
         <div className="grid md:grid-cols-2 gap-3">
           <Field
             label="Primary color"
@@ -144,17 +239,30 @@ export function TrainingPage({ adminTenantId }: { adminTenantId?: number }) {
             }
           />
           <Field
-            label="Logo URL"
-            value={form.brand_visual.logo_url}
-            onChange={(v) =>
-              setForm({ ...form, brand_visual: { ...form.brand_visual, logo_url: v } })
-            }
-          />
-          <Field
             label="App display name"
             value={form.brand_visual.app_display_name}
             onChange={(v) =>
               setForm({ ...form, brand_visual: { ...form.brand_visual, app_display_name: v } })
+            }
+          />
+          <Field
+            label="Visual style keywords"
+            value={form.brand_visual.visual_style_keywords.join(", ")}
+            onChange={(v) =>
+              setForm({
+                ...form,
+                brand_visual: { ...form.brand_visual, visual_style_keywords: csv(v) },
+              })
+            }
+          />
+          <Field
+            label="Image do-nots"
+            value={form.brand_visual.image_do_nots.join(", ")}
+            onChange={(v) =>
+              setForm({
+                ...form,
+                brand_visual: { ...form.brand_visual, image_do_nots: csv(v) },
+              })
             }
           />
           <div className="space-y-1">

@@ -56,6 +56,10 @@ class AIProvider:
     def plan_variants(self, brief: str, context_pack: str) -> list[dict]:
         raise NotImplementedError
 
+    def critic_variants(self, brief: str, context_pack: str, plans: list[dict]) -> list[dict]:
+        """Second-pass verifier; default returns plans unchanged."""
+        return plans
+
     def generate_image(self, prompt: str) -> bytes:
         raise NotImplementedError
 
@@ -85,11 +89,17 @@ class StubProvider(AIProvider):
             out.append(
                 {
                     "angle": angle,
+                    "headline": "Drive measurable outcomes",
+                    "subhead": "Practical insights for buyers",
+                    "bullets": ["Clarity", "Speed", "Trust"],
                     "caption": f"{brief[:280]}\n\n#B2B #LinkedIn",
+                    "background_prompt": (
+                        f"Abstract corporate illustration background about: {brief[:160]}. "
+                        "Soft gradients, professional, no text, no letters, no logos, no watermarks"
+                    ),
                     "image_prompt": (
-                        f"Landscape LinkedIn graphic 1536x1024, {angle.replace('_', ' ')} style, "
-                        f"short 5-word headline fully inside safe margins, large type, "
-                        f"illustration about: {brief[:160]}, no cut-off text, no tiny text"
+                        f"Abstract corporate illustration background about: {brief[:160]}. "
+                        "Soft gradients, professional, no text, no letters, no logos, no watermarks"
                     ),
                 }
             )
@@ -209,27 +219,49 @@ class OpenAIProvider(AIProvider):
             raise AppError(f"OpenAI chat error: {e}", 502, "OPENAI_ERROR")
 
     def plan_variants(self, brief: str, context_pack: str) -> list[dict]:
-        prompt = f"""Create exactly 3 LinkedIn image-post variants for this brief.
-Return ONLY valid JSON array of 3 objects with keys: angle, caption, image_prompt.
-Angles must be exactly: educational, thought_leadership, product_value (one each).
-Captions: professional LinkedIn style for the request (full story lives in the caption), sparingly use hashtags. Do NOT prefix with [Educational] labels.
-image_prompt: detailed prompt for a landscape LinkedIn INFORMATIONAL graphic.
-CRITICAL: Put only SHORT on-image text — specify the exact headline words (≤7 words) and any bullet labels (≤4 words each).
-Long explanations belong in caption, NOT in the image. Never ask for sentences that could get cut off.
-{IMAGE_LAYOUT_SPEC}
-{TEXT_SAFETY_APPENDIX}
-Apply brand colors and company display name; include website/phone/email in footer only if short enough to fit fully.
+        prompt = f"""Create exactly 3 LinkedIn post variants for this brief.
+Return ONLY a valid JSON array of 3 objects with keys:
+angle, headline, subhead, bullets, caption, background_prompt.
+
+Rules:
+- Angles must be exactly: educational, thought_leadership, product_value (one each).
+- headline: MAX 7 words, exact string that will be printed on the image by our template (not by the image model).
+- subhead: optional, MAX 12 words.
+- bullets: array of 0–4 short labels (MAX 5 words each).
+- caption: full LinkedIn caption (story, CTA, light hashtags). Do NOT invent metrics/clients/awards not in COMPANY CONTEXT.
+- background_prompt: visual-only scene for an image model. MUST say: no text, no letters, no numbers, no logos, no watermarks.
+- Only use facts present in COMPANY CONTEXT or the user brief. If a number/quote is not in context, omit it.
 
 USER BRIEF:
 {brief}
 """
         try:
-            text = self._chat_json(SYSTEM_STANCE + "\n\n" + context_pack, prompt, temperature=0.8)
+            text = self._chat_json(SYSTEM_STANCE + "\n\n" + context_pack, prompt, temperature=0.75)
             return _parse_variants_json(text)
         except AppError:
             raise
         except Exception as e:
             raise AppError(f"OpenAI plan error: {e}", 502, "OPENAI_ERROR")
+
+    def critic_variants(self, brief: str, context_pack: str, plans: list[dict]) -> list[dict]:
+        prompt = f"""You are a fact checker. Given COMPANY CONTEXT, user brief, and 3 post JSON objects,
+return ONLY a JSON array of 3 corrected objects with the same keys
+(angle, headline, subhead, bullets, caption, background_prompt).
+
+Remove or rewrite any claim (stats, clients, awards, quotes) not supported by context/brief.
+Keep headlines ≤7 words and bullets short. Keep background_prompt free of text/letters/logos.
+
+USER BRIEF:
+{brief}
+
+PLANS JSON:
+{json.dumps(plans)}
+"""
+        try:
+            text = self._chat_json(SYSTEM_STANCE + "\n\n" + context_pack, prompt, temperature=0.2)
+            return _parse_variants_json(text)
+        except Exception:
+            return plans
 
     def generate_image(self, prompt: str) -> bytes:
         """Call OpenAI Images API. Prefer landscape LinkedIn sizes; accept url or b64_json."""
@@ -386,22 +418,28 @@ def _strip_fences(text: str) -> str:
 
 
 def _parse_variants_json(text: str) -> list[dict]:
-    data = _parse_json_array(text)
-    out = []
-    for i, item in enumerate(data[:3]):
-        if not isinstance(item, dict):
-            continue
-        angle = item.get("angle") or ANGLES[min(i, len(ANGLES) - 1)]
-        out.append(
-            {
-                "angle": angle,
-                "caption": item.get("caption") or "",
-                "image_prompt": item.get("image_prompt") or item.get("imagePrompt") or "",
-            }
-        )
-    if len(out) < 3:
-        raise AppError(f"AI returned {len(out)} variants, need 3", 502, "AI_PARSE_ERROR")
-    return out[:3]
+    from modules.agent.src.post_schema import parse_variant_plans
+
+    text = _strip_fences(text)
+    m = re.search(r"\[.*\]", text, re.S)
+    raw = m.group(0) if m else text
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise AppError(f"Failed to parse AI JSON array: {e}", 502, "AI_PARSE_ERROR")
+    plans = parse_variant_plans(data)
+    return [
+        {
+            "angle": p.angle,
+            "headline": p.headline,
+            "subhead": p.subhead,
+            "bullets": p.bullets,
+            "caption": p.caption,
+            "background_prompt": p.background_prompt,
+            "image_prompt": p.background_prompt,
+        }
+        for p in plans
+    ]
 
 
 def _parse_json_array(text: str) -> list:
