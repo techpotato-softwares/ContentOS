@@ -10,6 +10,9 @@ import {
   FileUp,
   Sparkles,
   Gauge,
+  Square,
+  X,
+  RotateCcw,
 } from "lucide-react"
 import {
   useChatMutation,
@@ -24,6 +27,7 @@ import {
   type ContentPost,
   type AbScheduleSuggestion,
   type PostScore,
+  type GenerationBatchRow,
 } from "@/features/api/contentApi"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/input"
@@ -31,6 +35,11 @@ import { PostMedia } from "@/shared/ui/PostMedia"
 import { cn } from "@/shared/lib/utils"
 
 type Msg = { role: "user" | "assistant"; content: string }
+
+type PendingDraft =
+  | { kind: "brief"; text: string }
+  | { kind: "url"; url: string }
+  | { kind: "pdf"; file: File; name: string }
 
 const GEN_STAGES = [
   { afterSec: 0, label: "Planning on-brand variants" },
@@ -44,6 +53,14 @@ function formatElapsed(sec: number) {
   const m = Math.floor(sec / 60)
   const s = sec % 60
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const e = err as { name?: string; message?: string; status?: string; error?: string }
+  if (e.name === "AbortError") return true
+  const blob = `${e.message || ""} ${e.error || ""} ${e.status || ""}`.toLowerCase()
+  return blob.includes("abort")
 }
 
 function ScoreBadge({ score }: { score: PostScore }) {
@@ -77,6 +94,51 @@ function ScoreBadge({ score }: { score: PostScore }) {
   )
 }
 
+function PostCard({
+  p,
+  scoring,
+  onScore,
+}: {
+  p: ContentPost
+  scoring: boolean
+  onScore: (id: number) => void
+}) {
+  return (
+    <motion.article
+      key={p.postId}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl border border-border overflow-hidden bg-card/40"
+    >
+      <PostMedia compact imageUrl={p.imageUrl} filename={`contentos-post-${p.postId}.png`} />
+      <div className="px-3 pb-3 space-y-2">
+        <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide">
+          <span className="text-primary">{p.angle}</span>
+          <span className="text-muted-foreground normal-case">
+            {p.abLabel ? `Var ${p.abLabel} · ` : ""}#{p.postId}
+          </span>
+        </div>
+        {(p.headline || p.layout?.headline) && (
+          <h3 className="font-display text-base leading-snug">
+            {p.headline || p.layout?.headline}
+          </h3>
+        )}
+        <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap">{p.caption}</p>
+        {p.score && <ScoreBadge score={p.score} />}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px]"
+          disabled={scoring}
+          onClick={() => onScore(p.postId)}
+        >
+          {p.score ? "Re-score" : "Score"}
+        </Button>
+      </div>
+    </motion.article>
+  )
+}
+
 export function AgentPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [messages, setMessages] = useState<Msg[]>([
@@ -98,6 +160,7 @@ export function AgentPage() {
   const { data: modelsPayload } = useGetImageModelsQuery()
   const [loadMessages] = useLazyGetSessionMessagesQuery()
   const [posts, setPosts] = useState<ContentPost[]>([])
+  const [batches, setBatches] = useState<GenerationBatchRow[]>([])
   const [batchId, setBatchId] = useState<number | undefined>()
   const [suggestions, setSuggestions] = useState<AbScheduleSuggestion[]>([])
   const [strategy, setStrategy] = useState<string | null>(null)
@@ -107,8 +170,13 @@ export function AgentPage() {
   const [elapsed, setElapsed] = useState(0)
   const [genError, setGenError] = useState<string | null>(null)
   const [repurposeUrl, setRepurposeUrl] = useState("")
+  const [pendingPdf, setPendingPdf] = useState<{ file: File; name: string } | null>(null)
+  const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<{ abort: () => void } | null>(null)
+  const draftRef = useRef<PendingDraft | null>(null)
+  const optimisticUserRef = useRef<string | null>(null)
   const busy = genState.isLoading || repurposeState.isLoading
 
   useEffect(() => {
@@ -156,7 +224,71 @@ export function AgentPage() {
     return idx
   }, [elapsed])
 
+  const applyArtifacts = (res: {
+    posts?: ContentPost[]
+    batches?: GenerationBatchRow[]
+    batchId?: number | null
+  }) => {
+    if (res.batches?.length) {
+      setBatches(res.batches)
+      setPosts(res.batches.flatMap((b) => b.posts || []))
+      setBatchId(res.batches[res.batches.length - 1]?.batchId)
+    } else {
+      setBatches([])
+      setPosts(res.posts || [])
+      setBatchId(res.batchId ?? undefined)
+    }
+  }
+
+  const mergeNewBatch = (newPosts: ContentPost[], newBatchId?: number, brief?: string) => {
+    if (!newPosts.length) return
+    const bid = newBatchId ?? newPosts[0]?.batchId
+    const row: GenerationBatchRow = {
+      batchId: bid || Date.now(),
+      brief,
+      createdAt: new Date().toISOString(),
+      status: "completed",
+      posts: newPosts,
+    }
+    setBatches((prev) => [...prev.filter((b) => b.batchId !== row.batchId), row])
+    setPosts((prev) => {
+      const ids = new Set(newPosts.map((p) => p.postId))
+      return [...prev.filter((p) => !ids.has(p.postId)), ...newPosts]
+    })
+    if (bid) setBatchId(bid)
+  }
+
+  const restoreDraft = (draft: PendingDraft | null) => {
+    if (!draft) return
+    if (draft.kind === "brief") {
+      setInput(draft.text)
+      setDraftNotice("Draft restored — edit and generate again when ready.")
+    } else if (draft.kind === "url") {
+      setRepurposeUrl(draft.url)
+      setDraftNotice("URL draft restored — click Go when ready.")
+    } else {
+      setPendingPdf({ file: draft.file, name: draft.name })
+      setDraftNotice(`PDF “${draft.name}” kept — click Retry PDF when ready.`)
+    }
+  }
+
+  const dropOptimisticUser = () => {
+    const note = optimisticUserRef.current
+    if (!note) return
+    setMessages((m) => {
+      const last = m[m.length - 1]
+      if (last?.role === "user" && last.content === note) return m.slice(0, -1)
+      return m
+    })
+    optimisticUserRef.current = null
+  }
+
+  const cancelGenerate = () => {
+    abortRef.current?.abort()
+  }
+
   const openSession = async (id: number) => {
+    if (busy) cancelGenerate()
     const res = await loadMessages(id).unwrap()
     setSessionId(res.sessionId)
     const mapped: Msg[] = res.messages
@@ -167,18 +299,23 @@ export function AgentPage() {
         ? mapped
         : [{ role: "assistant", content: "Continue this chat or generate variants." }],
     )
-    setPosts(res.posts || [])
-    setBatchId(res.batchId ?? undefined)
+    applyArtifacts(res)
     setSuggestions([])
     setStrategy(null)
+    setDraftNotice(null)
+    setPendingPdf(null)
   }
 
   const newChat = () => {
+    if (busy) cancelGenerate()
     setSessionId(undefined)
     setPosts([])
+    setBatches([])
     setBatchId(undefined)
     setSuggestions([])
     setStrategy(null)
+    setPendingPdf(null)
+    setDraftNotice(null)
     setMessages([
       {
         role: "assistant",
@@ -188,7 +325,7 @@ export function AgentPage() {
   }
 
   const send = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || busy) return
     const text = input.trim()
     setInput("")
     setMessages((m) => [...m, { role: "user", content: text }])
@@ -198,6 +335,7 @@ export function AgentPage() {
       setMessages((m) => [...m, { role: "assistant", content: res.reply }])
       void refetchSessions()
     } catch {
+      setInput(text)
       setMessages((m) => [
         ...m,
         { role: "assistant", content: "Chat failed — check the API and try again." },
@@ -207,21 +345,29 @@ export function AgentPage() {
 
   const onGenerate = async () => {
     const brief =
+      input.trim() ||
       [...messages].reverse().find((m) => m.role === "user")?.content ||
-      input ||
       "Create an informative branded LinkedIn image post for our company"
+    const draft: PendingDraft = { kind: "brief", text: input.trim() || brief }
+    draftRef.current = draft
     setGenError(null)
+    setDraftNotice(null)
+    if (input.trim()) setInput("")
+
+    const req = generate({
+      brief,
+      sessionId,
+      preset,
+      renderMode,
+      imageModel,
+    })
+    abortRef.current = req
     try {
-      const res = await generate({
-        brief,
-        sessionId,
-        preset,
-        renderMode,
-        imageModel,
-      }).unwrap()
+      const res = await req.unwrap()
+      abortRef.current = null
+      draftRef.current = null
       if (res.sessionId) setSessionId(res.sessionId)
-      setPosts(res.posts)
-      setBatchId(res.batchId)
+      mergeNewBatch(res.posts, res.batchId, brief)
       setSuggestions([])
       setStrategy(null)
       setMessages((m) => [
@@ -232,31 +378,53 @@ export function AgentPage() {
         },
       ])
       void refetchSessions()
-    } catch {
-      setGenError(`Generation failed after ${formatElapsed(elapsed)}. Check OpenAI quota, then retry.`)
+    } catch (err) {
+      abortRef.current = null
+      if (isAbortError(err)) {
+        dropOptimisticUser()
+        restoreDraft(draftRef.current)
+        setGenError(null)
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: "Stopped — your draft was preserved." },
+        ])
+      } else {
+        restoreDraft(draftRef.current)
+        setGenError(`Generation failed after ${formatElapsed(elapsed)}. Check OpenAI quota, then retry.`)
+      }
     }
   }
 
   const onRepurposeUrl = async () => {
     if (!repurposeUrl.trim()) return
+    const url = repurposeUrl.trim()
+    const draft: PendingDraft = { kind: "url", url }
+    draftRef.current = draft
     setGenError(null)
-    const note = `Repurpose: ${repurposeUrl.trim()}`
+    setDraftNotice(null)
+    const note = `Repurpose: ${url}`
+    optimisticUserRef.current = note
     setMessages((m) => [...m, { role: "user", content: note }])
+    setRepurposeUrl("")
+
+    const req = repurpose({
+      url,
+      generate: true,
+      sessionId,
+      preset,
+      renderMode,
+      imageModel,
+    })
+    abortRef.current = req
     try {
-      const res = await repurpose({
-        url: repurposeUrl.trim(),
-        generate: true,
-        sessionId,
-        preset,
-        renderMode,
-        imageModel,
-      }).unwrap()
+      const res = await req.unwrap()
+      abortRef.current = null
+      draftRef.current = null
+      optimisticUserRef.current = null
       if (res.sessionId) setSessionId(res.sessionId)
-      setPosts(res.posts || [])
-      setBatchId(res.batchId)
+      mergeNewBatch(res.posts || [], res.batchId, note)
       setSuggestions([])
       setStrategy(null)
-      setRepurposeUrl("")
       setMessages((m) => [
         ...m,
         {
@@ -265,13 +433,30 @@ export function AgentPage() {
         },
       ])
       void refetchSessions()
-    } catch {
-      setGenError("URL repurpose failed — link may be blocked or empty.")
+    } catch (err) {
+      abortRef.current = null
+      if (isAbortError(err)) {
+        dropOptimisticUser()
+        restoreDraft(draftRef.current)
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: "Stopped — URL draft was preserved." },
+        ])
+      } else {
+        dropOptimisticUser()
+        restoreDraft(draftRef.current)
+        setGenError("URL repurpose failed — link may be blocked or empty.")
+      }
     }
   }
 
-  const onRepurposePdf = async (file: File) => {
+  const runPdf = async (file: File) => {
+    const draft: PendingDraft = { kind: "pdf", file, name: file.name }
+    draftRef.current = draft
+    setPendingPdf({ file, name: file.name })
     setGenError(null)
+    setDraftNotice(null)
+
     const reader = new FileReader()
     const b64 = await new Promise<string>((resolve, reject) => {
       reader.onload = () => {
@@ -281,21 +466,29 @@ export function AgentPage() {
       reader.onerror = () => reject(reader.error)
       reader.readAsDataURL(file)
     })
+
     const note = `Repurpose PDF: ${file.name}`
+    optimisticUserRef.current = note
     setMessages((m) => [...m, { role: "user", content: note }])
+
+    const req = repurpose({
+      pdfBase64: b64,
+      filename: file.name,
+      generate: true,
+      sessionId,
+      preset,
+      renderMode,
+      imageModel,
+    })
+    abortRef.current = req
     try {
-      const res = await repurpose({
-        pdfBase64: b64,
-        filename: file.name,
-        generate: true,
-        sessionId,
-        preset,
-        renderMode,
-        imageModel,
-      }).unwrap()
+      const res = await req.unwrap()
+      abortRef.current = null
+      draftRef.current = null
+      optimisticUserRef.current = null
+      setPendingPdf(null)
       if (res.sessionId) setSessionId(res.sessionId)
-      setPosts(res.posts || [])
-      setBatchId(res.batchId)
+      mergeNewBatch(res.posts || [], res.batchId, note)
       setSuggestions([])
       setStrategy(null)
       setMessages((m) => [
@@ -306,15 +499,37 @@ export function AgentPage() {
         },
       ])
       void refetchSessions()
-    } catch {
-      setGenError("PDF repurpose failed — use a text PDF under 12MB.")
+    } catch (err) {
+      abortRef.current = null
+      if (isAbortError(err)) {
+        dropOptimisticUser()
+        restoreDraft(draftRef.current)
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: "Stopped — PDF draft was kept for retry." },
+        ])
+      } else {
+        dropOptimisticUser()
+        restoreDraft(draftRef.current)
+        setGenError("PDF repurpose failed — use a text PDF under 12MB.")
+      }
     }
+  }
+
+  const onRepurposePdf = (file: File) => {
+    void runPdf(file)
   }
 
   const onScore = async (postId: number) => {
     try {
       const updated = await scorePost(postId).unwrap()
       setPosts((prev) => prev.map((p) => (p.postId === postId ? { ...p, ...updated } : p)))
+      setBatches((prev) =>
+        prev.map((b) => ({
+          ...b,
+          posts: b.posts.map((p) => (p.postId === postId ? { ...p, ...updated } : p)),
+        })),
+      )
     } catch {
       /* ignore */
     }
@@ -324,7 +539,17 @@ export function AgentPage() {
     if (!batchId) return
     try {
       const res = await scoreBatch(batchId).unwrap()
-      if (res.posts?.length) setPosts(res.posts)
+      if (res.posts?.length) {
+        const byId = new Map(res.posts.map((p) => [p.postId, p]))
+        setPosts((prev) => prev.map((p) => byId.get(p.postId) || p))
+        setBatches((prev) =>
+          prev.map((b) =>
+            b.batchId === batchId
+              ? { ...b, posts: b.posts.map((p) => byId.get(p.postId) || p) }
+              : b,
+          ),
+        )
+      }
     } catch {
       setGenError("Batch scoring failed.")
     }
@@ -337,7 +562,15 @@ export function AgentPage() {
       setSuggestions(res.suggestions || [])
       setStrategy(res.strategy || null)
       if (apply && res.posts?.length) {
-        setPosts(res.posts)
+        const byId = new Map(res.posts.map((p) => [p.postId, p]))
+        setPosts((prev) => prev.map((p) => byId.get(p.postId) || p))
+        setBatches((prev) =>
+          prev.map((b) =>
+            b.batchId === batchId
+              ? { ...b, posts: b.posts.map((p) => byId.get(p.postId) || p) }
+              : b,
+          ),
+        )
         setMessages((m) => [
           ...m,
           {
@@ -350,6 +583,20 @@ export function AgentPage() {
       setGenError("Could not build A/B schedule.")
     }
   }
+
+  const displayBatches =
+    batches.length > 0
+      ? [...batches].reverse()
+      : posts.length
+        ? [
+            {
+              batchId: batchId || 0,
+              posts,
+              createdAt: null,
+              brief: "Variants",
+            } as GenerationBatchRow,
+          ]
+        : []
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3 overflow-hidden">
@@ -400,7 +647,6 @@ export function AgentPage() {
       </header>
 
       <div className="grid lg:grid-cols-[200px_minmax(0,1.1fr)_minmax(0,0.95fr)] gap-3 flex-1 min-h-0 overflow-hidden">
-        {/* History */}
         <aside className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/30 p-2">
           <div className="flex items-center justify-between px-1 shrink-0">
             <span className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
@@ -433,7 +679,6 @@ export function AgentPage() {
           </div>
         </aside>
 
-        {/* Chat column */}
         <section className="relative min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/40">
           <div className="shrink-0 border-b border-border/60 px-3 py-2 space-y-2">
             <div className="flex gap-2">
@@ -476,11 +721,37 @@ export function AgentPage() {
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0]
-                  if (f) void onRepurposePdf(f)
+                  if (f) onRepurposePdf(f)
                   e.target.value = ""
                 }}
               />
             </div>
+            {pendingPdf && !busy && (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1.5 text-[11px]">
+                <FileUp className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="truncate flex-1">{pendingPdf.name}</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => void runPdf(pendingPdf.file)}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Retry PDF
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={() => {
+                    setPendingPdf(null)
+                    setDraftNotice(null)
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2.5">
@@ -505,6 +776,9 @@ export function AgentPage() {
           </div>
 
           <div className="shrink-0 border-t border-border/60 p-3 space-y-2 bg-background/50">
+            {draftNotice && !busy && (
+              <p className="text-xs text-primary">{draftNotice}</p>
+            )}
             {genError && !busy && <p className="text-xs text-destructive">{genError}</p>}
             <Textarea
               value={input}
@@ -528,18 +802,24 @@ export function AgentPage() {
               >
                 Send
               </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void onGenerate()}
-                disabled={busy}
-              >
-                {busy ? "Working…" : "Generate 3"}
-              </Button>
+              {busy ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1.5 min-w-[110px]"
+                  onClick={cancelGenerate}
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                  Stop
+                </Button>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={() => void onGenerate()}>
+                  Generate 3
+                </Button>
+              )}
             </div>
           </div>
 
-          {/* Overlay loader — does not grow page height */}
           <AnimatePresence>
             {busy && (
               <motion.div
@@ -576,8 +856,16 @@ export function AgentPage() {
                       </li>
                     ))}
                   </ol>
-                  <p className="text-[11px] text-muted-foreground">
-                    Usually 1–3 min. Stay on this tab — progress stays in place.
+                  <Button
+                    variant="destructive"
+                    className="w-full gap-2"
+                    onClick={cancelGenerate}
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                    Stop generating
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Your draft message / URL / PDF will be preserved.
                   </p>
                 </div>
               </motion.div>
@@ -585,11 +873,17 @@ export function AgentPage() {
           </AnimatePresence>
         </section>
 
-        {/* Variants */}
         <section className="min-h-0 flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/30">
           <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-            <h2 className="font-display text-lg">Variants</h2>
-            {batchId && posts.length >= 2 && (
+            <div>
+              <h2 className="font-display text-lg leading-tight">Artifacts</h2>
+              {batches.length > 0 && (
+                <p className="text-[10px] text-muted-foreground">
+                  {batches.length} batch{batches.length === 1 ? "" : "es"} · {posts.length} posts
+                </p>
+              )}
+            </div>
+            {batchId && (batches.find((b) => b.batchId === batchId)?.posts.length || 0) >= 2 && (
               <div className="flex gap-1.5">
                 <Button
                   size="sm"
@@ -599,7 +893,7 @@ export function AgentPage() {
                   onClick={() => void onScoreAll()}
                 >
                   <Gauge className="h-3 w-3" />
-                  Score all
+                  Score
                 </Button>
                 <Button
                   size="sm"
@@ -624,10 +918,10 @@ export function AgentPage() {
             )}
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
             {strategy && (
               <div className="rounded-xl border border-border bg-muted/40 p-2.5 text-[11px] space-y-1.5">
-                <p className="font-medium">A/B plan</p>
+                <p className="font-medium">A/B plan (latest batch)</p>
                 <p className="text-muted-foreground">{strategy}</p>
                 <ul className="space-y-0.5">
                   {suggestions.map((s) => (
@@ -640,53 +934,49 @@ export function AgentPage() {
               </div>
             )}
 
-            <AnimatePresence>
-              {posts.map((p) => (
-                <motion.article
-                  key={p.postId}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-xl border border-border overflow-hidden bg-card/40"
-                >
-                  <PostMedia
-                    compact
-                    imageUrl={p.imageUrl}
-                    filename={`contentos-post-${p.postId}.png`}
-                  />
-                  <div className="px-3 pb-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide">
-                      <span className="text-primary">{p.angle}</span>
-                      <span className="text-muted-foreground normal-case">
-                        {p.abLabel ? `Var ${p.abLabel} · ` : ""}#{p.postId}
-                      </span>
-                    </div>
-                    {(p.headline || p.layout?.headline) && (
-                      <h3 className="font-display text-base leading-snug">
-                        {p.headline || p.layout?.headline}
-                      </h3>
-                    )}
-                    <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap">
-                      {p.caption}
+            {displayBatches.map((batch, bi) => (
+              <div key={batch.batchId || bi} className="space-y-2">
+                <div className="flex items-center justify-between gap-2 sticky top-0 z-[1] bg-background/90 backdrop-blur-sm py-1">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium truncate">
+                      Batch #{batch.batchId}
+                      {bi === 0 ? " · latest" : ""}
                     </p>
-                    {p.score && <ScoreBadge score={p.score} />}
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      {batch.createdAt
+                        ? new Date(batch.createdAt).toLocaleString()
+                        : "This session"}
+                      {batch.brief ? ` · ${batch.brief.slice(0, 80)}` : ""}
+                    </p>
+                  </div>
+                  {batch.batchId !== batchId && (
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="h-7 text-[11px]"
-                      disabled={scoreState.isLoading}
-                      onClick={() => void onScore(p.postId)}
+                      variant="ghost"
+                      className="h-6 text-[10px] shrink-0"
+                      onClick={() => setBatchId(batch.batchId)}
                     >
-                      {p.score ? "Re-score" : "Score"}
+                      Focus
                     </Button>
-                  </div>
-                </motion.article>
-              ))}
-            </AnimatePresence>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {(batch.posts || []).map((p) => (
+                    <PostCard
+                      key={p.postId}
+                      p={p}
+                      scoring={scoreState.isLoading}
+                      onScore={(id) => void onScore(id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
 
-            {!posts.length && !busy && (
+            {!displayBatches.length && !busy && (
               <div className="h-full min-h-[200px] flex items-center justify-center text-center px-6">
                 <p className="text-sm text-muted-foreground">
-                  Variants appear here — generate from chat, URL, or PDF.
+                  All generated creatives for this chat appear here.
                 </p>
               </div>
             )}

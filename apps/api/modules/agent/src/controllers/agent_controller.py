@@ -137,28 +137,47 @@ def _ensure_chat_session(
     return cs
 
 
-def _session_posts(session, *, tid: int, session_id: int) -> tuple[int | None, list]:
-    """Latest generation batch + posts for a chat session."""
+def _session_artifacts(session, *, tid: int, session_id: int) -> dict:
+    """All generation batches + posts for a chat session (oldest → newest)."""
     batches = session.exec(
         select(GenerationBatch)
         .where(
             GenerationBatch.tenant_id == tid,
             GenerationBatch.session_id == session_id,
         )
-        .order_by(GenerationBatch.created_at.desc())
+        .order_by(GenerationBatch.created_at.asc())
     ).all()
     if not batches:
-        return None, []
-    latest = batches[0]
-    posts = session.exec(
-        select(ContentPost)
-        .where(
-            ContentPost.tenant_id == tid,
-            ContentPost.batch_id == latest.batch_id,
+        return {"batchId": None, "posts": [], "batches": []}
+
+    out_batches = []
+    all_posts: list = []
+    for b in batches:
+        posts = session.exec(
+            select(ContentPost)
+            .where(
+                ContentPost.tenant_id == tid,
+                ContentPost.batch_id == b.batch_id,
+            )
+            .order_by(ContentPost.post_id)
+        ).all()
+        post_dicts = [_post_dict(p) for p in posts]
+        all_posts.extend(post_dicts)
+        out_batches.append(
+            {
+                "batchId": b.batch_id,
+                "brief": (b.user_brief or "")[:400],
+                "createdAt": b.created_at.isoformat() + "Z" if b.created_at else None,
+                "status": b.status,
+                "posts": post_dicts,
+            }
         )
-        .order_by(ContentPost.post_id)
-    ).all()
-    return latest.batch_id, posts
+    latest = batches[-1]
+    return {
+        "batchId": latest.batch_id,
+        "posts": all_posts,
+        "batches": out_batches,
+    }
 
 
 def _post_dict(p: ContentPost) -> dict:
@@ -261,7 +280,7 @@ class AgentController:
                 .where(ChatMessage.session_id == cs.session_id, ChatMessage.tenant_id == tid)
                 .order_by(ChatMessage.created_at)
             ).all()
-            batch_id, posts = _session_posts(session, tid=tid, session_id=cs.session_id)
+            artifacts = _session_artifacts(session, tid=tid, session_id=cs.session_id)
             return create_success_response(
                 {
                     "sessionId": cs.session_id,
@@ -275,8 +294,9 @@ class AgentController:
                         }
                         for m in rows
                     ],
-                    "batchId": batch_id,
-                    "posts": [_post_dict(p) for p in posts],
+                    "batchId": artifacts["batchId"],
+                    "posts": artifacts["posts"],
+                    "batches": artifacts["batches"],
                 }
             )
 

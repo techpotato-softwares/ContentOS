@@ -115,6 +115,14 @@ export type WeeklySnapshot = {
   tenants?: unknown[]
 }
 
+export type GenerationBatchRow = {
+  batchId: number
+  brief?: string
+  createdAt?: string | null
+  status?: string
+  posts: ContentPost[]
+}
+
 export type ImageModelInfo = {
   id: string
   label: string
@@ -257,6 +265,7 @@ export const contentApi = createApi({
         messages: ChatMessageRow[]
         batchId?: number | null
         posts?: ContentPost[]
+        batches?: GenerationBatchRow[]
       },
       number
     >({
