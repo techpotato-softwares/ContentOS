@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field, field_validator
 ANGLES = ("educational", "thought_leadership", "product_value")
 
 LINKEDIN_PRESETS: dict[str, tuple[int, int]] = {
-    "linkedin_landscape": (1200, 627),
+    # Higher than classic 1200×627 so text stays crisp when viewed large
+    "linkedin_landscape": (1920, 1005),
     "linkedin_square": (1080, 1080),
     "linkedin_portrait": (1080, 1350),
 }

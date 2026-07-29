@@ -125,6 +125,10 @@ class ContentPost(SQLModel, table=True):
     caption: str = Field(sa_column=Column(Text))
     image_prompt: str = Field(sa_column=Column(Text))
     layout_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    score_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    source_type: Optional[str] = None  # brief | url | pdf
+    source_ref: Optional[str] = Field(default=None, sa_column=Column(Text))
+    ab_label: Optional[str] = None  # A | B | C | hold
     image_s3_key: Optional[str] = None
     image_url: Optional[str] = None
     # draft | pending_review | approved | rejected | published
@@ -132,6 +136,7 @@ class ContentPost(SQLModel, table=True):
     linkedin_post_id: Optional[str] = None
     reviewed_by: Optional[int] = None
     reviewed_at: Optional[datetime] = None
+    scheduled_at: Optional[datetime] = Field(default=None, index=True)
     published_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

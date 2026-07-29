@@ -16,7 +16,11 @@ from modules.agent.src.post_schema import (
     LINKEDIN_PRESETS,
     DEFAULT_PRESET,
 )
-from modules.agent.src.compose import compose_linkedin_post
+from modules.agent.src.compose import (
+    compose_linkedin_post,
+    enrich_background_prompt,
+    background_looks_empty,
+)
 from modules.agent.src.image_providers import (
     list_image_models,
     get_image_provider,
@@ -25,26 +29,34 @@ from modules.agent.src.image_providers import (
 
 
 def _ensure_layout_column():
-    """Add layout_json if missing (create_all does not alter existing tables)."""
+    """Add newer content_posts columns if missing (create_all does not alter)."""
+    cols = [
+        ("layout_json", "TEXT"),
+        ("score_json", "TEXT"),
+        ("source_type", "VARCHAR"),
+        ("source_ref", "TEXT"),
+        ("ab_label", "VARCHAR"),
+        ("scheduled_at", "TIMESTAMP"),
+    ]
     try:
         from sqlalchemy import text
         from database import get_engine
 
         with get_engine().begin() as conn:
-            conn.execute(
-                text(
-                    "ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS layout_json TEXT"
-                )
-            )
+            for name, typ in cols:
+                try:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS {name} {typ}"
+                        )
+                    )
+                except Exception:
+                    try:
+                        conn.execute(text(f"ALTER TABLE content_posts ADD COLUMN {name} {typ}"))
+                    except Exception:
+                        pass
     except Exception:
-        try:
-            from sqlalchemy import text
-            from database import get_engine
-
-            with get_engine().begin() as conn:
-                conn.execute(text("ALTER TABLE content_posts ADD COLUMN layout_json TEXT"))
-        except Exception:
-            pass
+        pass
 
 
 def _load_context_pack(session, tenant: Tenant) -> str:
@@ -100,6 +112,55 @@ def _brand_lines(tenant: Tenant) -> list[str]:
     return [x for x in lines if x]
 
 
+def _ensure_chat_session(
+    session,
+    *,
+    tid: int,
+    user_id: int,
+    session_id,
+    title: str,
+) -> ChatSession:
+    """Return existing chat session or create one (so generate/PDF always land in history)."""
+    if session_id:
+        cs = session.get(ChatSession, int(session_id))
+        if not cs or cs.tenant_id != tid or cs.user_id != user_id:
+            raise NotFoundError("Chat session not found")
+        return cs
+    cs = ChatSession(
+        tenant_id=tid,
+        user_id=user_id,
+        title=(title or "New chat").strip()[:80] or "New chat",
+    )
+    session.add(cs)
+    session.commit()
+    session.refresh(cs)
+    return cs
+
+
+def _session_posts(session, *, tid: int, session_id: int) -> tuple[int | None, list]:
+    """Latest generation batch + posts for a chat session."""
+    batches = session.exec(
+        select(GenerationBatch)
+        .where(
+            GenerationBatch.tenant_id == tid,
+            GenerationBatch.session_id == session_id,
+        )
+        .order_by(GenerationBatch.created_at.desc())
+    ).all()
+    if not batches:
+        return None, []
+    latest = batches[0]
+    posts = session.exec(
+        select(ContentPost)
+        .where(
+            ContentPost.tenant_id == tid,
+            ContentPost.batch_id == latest.batch_id,
+        )
+        .order_by(ContentPost.post_id)
+    ).all()
+    return latest.batch_id, posts
+
+
 def _post_dict(p: ContentPost) -> dict:
     layout = None
     if getattr(p, "layout_json", None):
@@ -107,6 +168,12 @@ def _post_dict(p: ContentPost) -> dict:
             layout = json.loads(p.layout_json)
         except Exception:
             layout = None
+    score = None
+    if getattr(p, "score_json", None):
+        try:
+            score = json.loads(p.score_json)
+        except Exception:
+            score = None
     return {
         "postId": p.post_id,
         "batchId": p.batch_id,
@@ -118,10 +185,15 @@ def _post_dict(p: ContentPost) -> dict:
         "headline": (layout or {}).get("headline"),
         "subhead": (layout or {}).get("subhead"),
         "bullets": (layout or {}).get("bullets"),
+        "score": score,
+        "sourceType": getattr(p, "source_type", None),
+        "sourceRef": getattr(p, "source_ref", None),
+        "abLabel": getattr(p, "ab_label", None),
         "imageUrl": p.image_url,
         "imageS3Key": p.image_s3_key,
         "status": p.status,
         "linkedinPostId": p.linkedin_post_id,
+        "scheduledAt": p.scheduled_at.isoformat() + "Z" if getattr(p, "scheduled_at", None) else None,
         "createdAt": p.created_at.isoformat() if p.created_at else None,
     }
 
@@ -189,6 +261,7 @@ class AgentController:
                 .where(ChatMessage.session_id == cs.session_id, ChatMessage.tenant_id == tid)
                 .order_by(ChatMessage.created_at)
             ).all()
+            batch_id, posts = _session_posts(session, tid=tid, session_id=cs.session_id)
             return create_success_response(
                 {
                     "sessionId": cs.session_id,
@@ -202,6 +275,8 @@ class AgentController:
                         }
                         for m in rows
                     ],
+                    "batchId": batch_id,
+                    "posts": [_post_dict(p) for p in posts],
                 }
             )
 
@@ -298,10 +373,25 @@ class AgentController:
         image_model = data.get("imageModel")
         tid = resolve_tenant_id(user)
         session_id = data.get("sessionId")
+        source_type = (data.get("sourceType") or "brief").strip()
+        source_ref = (data.get("sourceRef") or "").strip() or None
+        user_note = (data.get("userNote") or "").strip()  # e.g. "Repurpose PDF: file.pdf"
         with get_session() as session:
             tenant = session.get(Tenant, tid)
             if not tenant:
                 raise NotFoundError("Tenant not found")
+
+            # Always attach to a chat session so history + variants reload together
+            title_seed = user_note or source_ref or brief
+            cs = _ensure_chat_session(
+                session,
+                tid=tid,
+                user_id=user["userId"],
+                session_id=session_id,
+                title=title_seed[:60],
+            )
+            session_id = cs.session_id
+
             training = parse_training(tenant.training_json)
             pack = _load_context_pack(session, tenant)
             provider = get_provider()
@@ -319,7 +409,7 @@ class AgentController:
             batch = GenerationBatch(
                 tenant_id=tid,
                 user_id=user["userId"],
-                session_id=int(session_id) if session_id else None,
+                session_id=int(session_id),
                 user_brief=brief,
                 status="completed",
             )
@@ -330,7 +420,7 @@ class AgentController:
             posts = []
             for plan in plans:
                 layout = plan.to_layout_dict()
-                bg_prompt = plan.background_prompt
+                bg_prompt = enrich_background_prompt(plan.background_prompt, brand)
                 if render_mode == "native_text":
                     # Experimental: ask model to render text (spelling not guaranteed)
                     native_prompt = enrich_image_prompt(
@@ -342,7 +432,6 @@ class AgentController:
                         brand_lines,
                     )
                     img = img_provider.generate_background(native_prompt, gen_size)
-                    # Still resize via compose without replacing text if possible — use raw
                     try:
                         from PIL import Image
                         import io
@@ -356,6 +445,15 @@ class AgentController:
                         final_bytes = img
                 else:
                     bg = img_provider.generate_background(bg_prompt, gen_size)
+                    # Retry once if right side looks empty / void
+                    if background_looks_empty(bg):
+                        retry_prompt = (
+                            bg_prompt
+                            + "\nRETRY: Previous frame was empty. Fill the RIGHT half with a clear "
+                            "photoreal subject (person using technology OR premium product shot). "
+                            "No blank parchment, no black void."
+                        )
+                        bg = img_provider.generate_background(retry_prompt, gen_size)
                     final_bytes = compose_linkedin_post(
                         bg,
                         layout,
@@ -377,18 +475,55 @@ class AgentController:
                     image_s3_key=uploaded["s3Key"],
                     image_url=uploaded["imageUrl"],
                     status="draft",
+                    source_type=source_type,
+                    source_ref=source_ref,
                 )
                 session.add(post)
                 posts.append(post)
-            if session_id:
+
+            # Persist chat history for this generation (PDF/URL always; brief when new session)
+            history_user = user_note
+            if not history_user:
+                if source_type == "url" and source_ref:
+                    history_user = f"Repurpose: {source_ref}"
+                elif source_type == "pdf" and source_ref:
+                    history_user = f"Repurpose PDF: {source_ref}"
+
+            prior = session.exec(
+                select(ChatMessage).where(ChatMessage.session_id == int(session_id))
+            ).all()
+            # For brief generate into an empty/new session, store the brief as the user turn
+            if not history_user and not prior:
+                history_user = brief[:500]
+
+            if history_user:
                 session.add(
                     ChatMessage(
                         session_id=int(session_id),
                         tenant_id=tid,
-                        role="assistant",
-                        content=f"Generated {len(posts)} variants (batch #{batch.batch_id}, {render_mode}/{preset}).",
+                        role="user",
+                        content=history_user,
                     )
                 )
+            src_label = {
+                "url": "from URL",
+                "pdf": "from PDF",
+            }.get(source_type, "")
+            session.add(
+                ChatMessage(
+                    session_id=int(session_id),
+                    tenant_id=tid,
+                    role="assistant",
+                    content=(
+                        f"Generated {len(posts)} variants {src_label} "
+                        f"(batch #{batch.batch_id}, {render_mode}/{preset})."
+                    ).strip(),
+                )
+            )
+            cs.updated_at = datetime.utcnow()
+            if (not cs.title or cs.title == "New chat") and history_user:
+                cs.title = history_user[:60]
+            session.add(cs)
             write_audit(
                 session,
                 tenant_id=tid,
@@ -404,11 +539,13 @@ class AgentController:
             return create_success_response(
                 {
                     "batchId": batch.batch_id,
+                    "sessionId": session_id,
                     "posts": [_post_dict(p) for p in posts],
                     "angles": list(ANGLES),
                     "preset": preset,
                     "renderMode": render_mode,
                     "imageModel": getattr(img_provider, "model_id", image_model),
+                    "sourceType": source_type,
                 },
                 201,
             )
@@ -484,6 +621,259 @@ class AgentController:
             advice = get_provider().analytics_advice(pack, PLACEHOLDER_METRICS)
             advice["placeholder"] = True
             return create_success_response(advice)
+
+    @Post("/posts/{id}/score")
+    @RequireModule("agent")
+    @RequirePermission("agent:chat", "posts:review")
+    def score_post(self, id: str, user=None):
+        _ensure_layout_column()
+        tid = resolve_tenant_id(user)
+        with get_session() as session:
+            tenant = session.get(Tenant, tid)
+            post = session.get(ContentPost, int(id))
+            if not tenant or not post or post.tenant_id != tid:
+                raise NotFoundError("Post not found")
+            layout = None
+            if post.layout_json:
+                try:
+                    layout = json.loads(post.layout_json)
+                except Exception:
+                    layout = None
+            pack = _load_context_pack(session, tenant)
+            score = get_provider().score_post(
+                caption=post.caption or "",
+                layout=layout,
+                angle=post.angle or "",
+                context_pack=pack,
+            )
+            post.score_json = json.dumps(score)
+            post.updated_at = datetime.utcnow()
+            session.add(post)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=user["userId"],
+                action="agent.score_post",
+                resource_type="content_post",
+                resource_id=str(post.post_id),
+                detail=str(score.get("overall")),
+            )
+            session.commit()
+            session.refresh(post)
+            return create_success_response(_post_dict(post))
+
+    @Post("/batches/{id}/score")
+    @RequireModule("agent")
+    @RequirePermission("agent:chat", "posts:review")
+    def score_batch(self, id: str, user=None):
+        """Comparative AI scores for all variants in a batch (distinct overalls)."""
+        _ensure_layout_column()
+        tid = resolve_tenant_id(user)
+        with get_session() as session:
+            tenant = session.get(Tenant, tid)
+            batch = session.get(GenerationBatch, int(id))
+            if not tenant or not batch or batch.tenant_id != tid:
+                raise NotFoundError("Batch not found")
+            posts = session.exec(
+                select(ContentPost).where(
+                    ContentPost.batch_id == batch.batch_id,
+                    ContentPost.tenant_id == tid,
+                )
+            ).all()
+            if not posts:
+                raise ValidationError("No posts in batch")
+            pack = _load_context_pack(session, tenant)
+            payload = [_post_dict(p) for p in posts]
+            scores = get_provider().score_posts_batch(posts=payload, context_pack=pack)
+            by_id = {s.get("postId"): s for s in scores if isinstance(s, dict)}
+            updated = []
+            for p in posts:
+                score = by_id.get(p.post_id)
+                if not score:
+                    continue
+                # strip postId before persist
+                clean = {k: v for k, v in score.items() if k != "postId"}
+                p.score_json = json.dumps(clean)
+                p.updated_at = datetime.utcnow()
+                session.add(p)
+                updated.append(p)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=user["userId"],
+                action="agent.score_batch",
+                resource_type="generation_batch",
+                resource_id=str(batch.batch_id),
+            )
+            session.commit()
+            for p in updated:
+                session.refresh(p)
+            return create_success_response(
+                {"batchId": batch.batch_id, "posts": [_post_dict(p) for p in posts]}
+            )
+
+    @Post("/repurpose")
+    @RequireModule("agent")
+    @RequirePermission("agent:chat")
+    def repurpose(self, data: dict, user=None):
+        """Extract text from URL or PDF and optionally generate 3 variants."""
+        _ensure_layout_column()
+        data = data or {}
+        url = (data.get("url") or "").strip()
+        pdf_b64 = data.get("pdfBase64") or data.get("pdf_base64")
+        filename = data.get("filename") or "upload.pdf"
+        generate_now = bool(data.get("generate", True))
+
+        from modules.agent.src.extract import extract_from_url, extract_from_pdf_base64
+
+        if url:
+            extracted = extract_from_url(url)
+        elif pdf_b64:
+            extracted = extract_from_pdf_base64(str(pdf_b64), filename=filename)
+        else:
+            raise ValidationError("Provide url or pdfBase64")
+
+        if not generate_now:
+            return create_success_response({"extracted": extracted, "posts": []})
+
+        # Persist under chat history (create session if needed via generate)
+        user_note = (
+            f"Repurpose: {extracted['sourceRef']}"
+            if extracted["sourceType"] == "url"
+            else f"Repurpose PDF: {extracted.get('title') or filename}"
+        )
+        gen_payload = {
+            "brief": extracted["brief"],
+            "sessionId": data.get("sessionId"),
+            "preset": data.get("preset"),
+            "renderMode": data.get("renderMode"),
+            "imageModel": data.get("imageModel"),
+            "sourceType": extracted["sourceType"],
+            "sourceRef": extracted["sourceRef"],
+            "userNote": user_note,
+        }
+        result = self.generate(gen_payload, user=user)
+        # generate returns API response dict — unwrap data if wrapped
+        body = result
+        if isinstance(result, dict) and "body" in result:
+            try:
+                body = json.loads(result["body"])
+            except Exception:
+                body = result
+        payload = body.get("data") if isinstance(body, dict) and "data" in body else body
+        if isinstance(payload, dict):
+            payload = {**payload, "extracted": extracted}
+            return create_success_response(payload, 201)
+        return result
+
+    @Post("/batches/{id}/ab-schedule")
+    @RequireModule("agent")
+    @RequirePermission("agent:chat", "posts:review")
+    def ab_schedule(self, id: str, data: dict | None = None, user=None):
+        """Suggest A/B schedule slots for a generation batch; optionally apply."""
+        _ensure_layout_column()
+        tid = resolve_tenant_id(user)
+        apply = bool((data or {}).get("apply"))
+        with get_session() as session:
+            tenant = session.get(Tenant, tid)
+            batch = session.get(GenerationBatch, int(id))
+            if not tenant or not batch or batch.tenant_id != tid:
+                raise NotFoundError("Batch not found")
+            posts = session.exec(
+                select(ContentPost).where(
+                    ContentPost.batch_id == batch.batch_id,
+                    ContentPost.tenant_id == tid,
+                )
+            ).all()
+            if len(posts) < 2:
+                raise ValidationError("Need at least 2 variants in the batch for A/B")
+            pack = _load_context_pack(session, tenant)
+            advice = get_provider().analytics_advice(pack, PLACEHOLDER_METRICS)
+            best_times = advice.get("bestTimes") if isinstance(advice, dict) else None
+            plan = get_provider().ab_schedule_suggestions(
+                posts=[_post_dict(p) for p in posts],
+                context_pack=pack,
+                best_times=best_times if isinstance(best_times, list) else None,
+            )
+            applied = []
+            if apply:
+                by_id = {p.post_id: p for p in posts}
+                for s in plan.get("suggestions") or []:
+                    post = by_id.get(s.get("postId"))
+                    if not post:
+                        continue
+                    raw = s.get("scheduledAt")
+                    when = None
+                    if raw:
+                        try:
+                            when = datetime.fromisoformat(str(raw).replace("Z", "+00:00")).replace(
+                                tzinfo=None
+                            )
+                        except Exception:
+                            when = None
+                    post.scheduled_at = when
+                    post.ab_label = str(s.get("label") or "")[:16] or None
+                    post.updated_at = datetime.utcnow()
+                    session.add(post)
+                    applied.append(_post_dict(post))
+                write_audit(
+                    session,
+                    tenant_id=tid,
+                    actor_user_id=user["userId"],
+                    action="agent.ab_schedule_apply",
+                    resource_type="generation_batch",
+                    resource_id=str(batch.batch_id),
+                    detail=plan.get("strategy"),
+                )
+                session.commit()
+                for p in posts:
+                    session.refresh(p)
+                applied = [_post_dict(p) for p in posts]
+            else:
+                session.commit()
+            return create_success_response(
+                {
+                    "batchId": batch.batch_id,
+                    "strategy": plan.get("strategy"),
+                    "suggestions": plan.get("suggestions") or [],
+                    "applied": apply,
+                    "posts": applied if apply else [_post_dict(p) for p in posts],
+                }
+            )
+
+    @Get("/insights/weekly-snapshot")
+    @RequireModule("agent")
+    @RequirePermission("agent:chat", "posts:review", "tenant:admin")
+    def weekly_snapshot_preview(self, user=None):
+        """Preview this week's team performance stats (no email)."""
+        from modules.agent.src.weekly_snapshot import collect_tenant_stats, _week_window
+
+        tid = resolve_tenant_id(user)
+        start, end = _week_window()
+        with get_session() as session:
+            tenant = session.get(Tenant, tid)
+            if not tenant:
+                raise NotFoundError("Tenant not found")
+            stats = collect_tenant_stats(session, tid, start, end)
+            return create_success_response(
+                {"tenantId": tid, "tenantName": tenant.name, "stats": stats}
+            )
+
+    @Post("/insights/weekly-snapshot/send")
+    @RequireModule("agent")
+    @RequirePermission("tenant:admin", "admin:tenants")
+    def weekly_snapshot_send(self, data: dict | None = None, user=None):
+        """Send weekly snapshot email now (Amazon SES) for current tenant."""
+        from modules.agent.src.weekly_snapshot import send_weekly_snapshots
+
+        tid = resolve_tenant_id(user)
+        # Super admin may pass tenantId to send for another / all
+        target = (data or {}).get("tenantId")
+        if target == "all" and "admin:tenants" in (user.get("permissions") or []):
+            result = send_weekly_snapshots()
+        else:
+            result = send_weekly_snapshots(tenant_id=int(target) if target else tid)
+        return create_success_response(result)
 
 
 def os_provider() -> str:

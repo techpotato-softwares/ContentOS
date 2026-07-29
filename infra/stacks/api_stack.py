@@ -1,6 +1,8 @@
 """Main ContentOS API stack — Python CDK."""
 from __future__ import annotations
 
+import os
+
 from aws_cdk import RemovalPolicy, Stack, Tags
 from aws_cdk import aws_lambda as lambda_
 from constructs import Construct
@@ -137,8 +139,31 @@ class ApiStack(Stack):
                 s3_bucket_name = files_bucket.bucket_name
 
         scheduled: ScheduledLambdaConstruct | None = None
-        scheduled_lambdas: list[ScheduledLambdaConfig] = []
-        if scheduled_lambdas and config.features.s3:
+        scheduled_lambdas: list[ScheduledLambdaConfig] = [
+            ScheduledLambdaConfig(
+                name="weekly-snapshot",
+                handler="src.lambdas.weekly_snapshot.handler",
+                description="Weekly team performance snapshot emails via Amazon SES",
+                schedule_expression="cron(0 9 ? * MON *)",
+                timeout=120,
+                environment={
+                    "SES_ENABLED": "true",
+                    "SES_FROM_EMAIL": os.environ.get(
+                        "SES_FROM_EMAIL", "noreply@contentos.app"
+                    ),
+                },
+                enabled=True,
+            ),
+            ScheduledLambdaConfig(
+                name="scheduled-publisher",
+                handler="src.lambdas.scheduled_publisher.handler",
+                description="Publish approved LinkedIn posts when scheduled_at is due",
+                schedule_expression="rate(15 minutes)",
+                timeout=120,
+                enabled=True,
+            ),
+        ]
+        if scheduled_lambdas:
             print("\n⏰ Creating scheduled Lambda functions...")
             scheduled = ScheduledLambdaConstruct(
                 self,
@@ -149,6 +174,17 @@ class ApiStack(Stack):
                 db_host=db_host,
                 s3_bucket_name=s3_bucket_name,
             )
+            # Grant SES send if feature flag or always for weekly snapshot
+            for fn in scheduled.functions.values():
+                from aws_cdk import aws_iam as iam
+
+                fn.add_to_role_policy(
+                    iam.PolicyStatement(
+                        effect=iam.Effect.ALLOW,
+                        actions=["ses:SendEmail", "ses:SendRawEmail"],
+                        resources=["*"],
+                    )
+                )
 
         print("\n🔐 Creating JWT secrets...")
         jwt_secrets = JwtSecretsConstruct(

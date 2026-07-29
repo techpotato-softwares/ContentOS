@@ -61,7 +61,20 @@ def main():
         from database import get_engine
 
         with get_engine().begin() as conn:
-            conn.execute(text("ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS layout_json TEXT"))
+            for col, typ in [
+                ("layout_json", "TEXT"),
+                ("score_json", "TEXT"),
+                ("source_type", "VARCHAR"),
+                ("source_ref", "TEXT"),
+                ("ab_label", "VARCHAR"),
+                ("scheduled_at", "TIMESTAMP"),
+            ]:
+                try:
+                    conn.execute(
+                        text(f"ALTER TABLE content_posts ADD COLUMN IF NOT EXISTS {col} {typ}")
+                    )
+                except Exception:
+                    pass
     except Exception:
         pass
     with get_session() as session:

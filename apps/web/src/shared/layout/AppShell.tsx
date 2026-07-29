@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom"
+import { NavLink, Outlet, useLocation } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   Bot,
@@ -34,10 +34,13 @@ const links = [
 
 export function AppShell() {
   const dispatch = useAppDispatch()
+  const location = useLocation()
   const user = useAppSelector((s) => s.auth.user)
   const colorMode = useAppSelector((s) => s.theme.colorMode)
   const brand = useAppSelector((s) => s.theme.brand)
   const { data: theme } = useGetThemeQuery(undefined, { skip: !user })
+  // Agent uses a fixed workspace; other pages (Review, etc.) need page scroll
+  const isWorkspace = location.pathname === "/agent"
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", colorMode === "dark")
@@ -51,10 +54,15 @@ export function AppShell() {
   const title = brand?.appDisplayName || "ContentOS"
 
   return (
-    <div className="min-h-screen flex relative overflow-hidden">
+    <div
+      className={cn(
+        "flex relative",
+        isWorkspace ? "h-screen overflow-hidden" : "min-h-screen",
+      )}
+    >
       <div className="pointer-events-none absolute inset-0 mesh-bg" aria-hidden />
-      <aside className="glass-panel relative z-10 w-64 m-3 mr-0 rounded-3xl p-4 flex flex-col gap-6 shadow-elevated">
-        <div className="flex items-center gap-3 px-2">
+      <aside className="glass-panel relative z-10 w-64 m-3 mr-0 rounded-3xl p-4 flex flex-col gap-4 shadow-elevated shrink-0 h-[calc(100vh-1.5rem)] sticky top-3 overflow-hidden">
+        <div className="flex items-center gap-3 px-2 shrink-0">
           {brand?.logoUrl ? (
             <img src={brand.logoUrl} alt="" className="h-10 w-10 rounded-xl object-cover ring-2 ring-primary/30" />
           ) : (
@@ -69,7 +77,7 @@ export function AppShell() {
             </div>
           </div>
         </div>
-        <nav className="flex flex-col gap-1 flex-1">
+        <nav className="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto pr-0.5 -mr-0.5">
           {links
             .filter((l) => !l.admin || isAdmin)
             .map((l) => (
@@ -78,7 +86,7 @@ export function AppShell() {
                 to={l.to}
                 className={({ isActive }) =>
                   cn(
-                    "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all duration-200",
+                    "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all duration-200 shrink-0",
                     isActive
                       ? "bg-primary text-primary-foreground shadow-glow"
                       : "hover:bg-muted/80 text-foreground/90",
@@ -101,27 +109,45 @@ export function AppShell() {
               </NavLink>
             ))}
         </nav>
-        <div className="flex items-center gap-2 pt-2 border-t border-border">
+        <div className="mt-auto shrink-0 flex items-center gap-2 pt-3 border-t border-border">
           <Button
             variant="outline"
             size="sm"
-            className="rounded-xl"
+            className="rounded-xl h-10 w-10 shrink-0 px-0"
+            title={colorMode === "dark" ? "Light mode" : "Dark mode"}
+            aria-label={colorMode === "dark" ? "Light mode" : "Dark mode"}
             onClick={() => dispatch(setColorMode(colorMode === "dark" ? "light" : "dark"))}
           >
             {colorMode === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="sm" className="flex-1 rounded-xl" onClick={() => dispatch(logout())}>
-            <LogOut className="h-4 w-4" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1 rounded-xl h-10 hover:bg-muted/80 gap-2 min-w-0"
+            title={`Logout · ${user?.username || ""}`}
+            onClick={() => dispatch(logout())}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
             <span className="truncate">{user?.username}</span>
           </Button>
         </div>
       </aside>
-      <main className="relative z-10 flex-1 p-3 min-w-0">
+      <main
+        className={cn(
+          "relative z-10 flex-1 p-3 min-w-0",
+          isWorkspace && "min-h-0 flex flex-col",
+        )}
+      >
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="glass-panel min-h-[calc(100vh-1.5rem)] rounded-3xl p-6 md:p-8 shadow-elevated"
+          className={cn(
+            "glass-panel rounded-3xl p-4 md:p-6 shadow-elevated",
+            isWorkspace
+              ? "flex-1 min-h-0 h-[calc(100vh-1.5rem)] overflow-hidden flex flex-col"
+              : "min-h-[calc(100vh-1.5rem)] overflow-visible",
+          )}
         >
           <Outlet />
         </motion.div>

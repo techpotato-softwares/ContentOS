@@ -72,6 +72,12 @@ def _post_dict(p: ContentPost) -> dict:
             layout = json.loads(p.layout_json)
         except Exception:
             layout = None
+    score = None
+    if getattr(p, "score_json", None):
+        try:
+            score = json.loads(p.score_json)
+        except Exception:
+            score = None
     return {
         "postId": p.post_id,
         "batchId": p.batch_id,
@@ -82,8 +88,13 @@ def _post_dict(p: ContentPost) -> dict:
         "headline": (layout or {}).get("headline"),
         "subhead": (layout or {}).get("subhead"),
         "bullets": (layout or {}).get("bullets"),
+        "score": score,
+        "sourceType": getattr(p, "source_type", None),
+        "sourceRef": getattr(p, "source_ref", None),
+        "abLabel": getattr(p, "ab_label", None),
         "status": p.status,
         "linkedinPostId": p.linkedin_post_id,
+        "scheduledAt": p.scheduled_at.isoformat() + "Z" if getattr(p, "scheduled_at", None) else None,
         "publishedAt": p.published_at.isoformat() if p.published_at else None,
     }
 
@@ -332,6 +343,47 @@ class PublishingController:
                 resource_type="content_post",
                 resource_id=str(post.post_id),
                 detail=linkedin_id,
+            )
+            session.commit()
+            session.refresh(post)
+            return create_success_response(_post_dict(post))
+
+    @Post("/posts/{id}/schedule")
+    @RequireModule("publishing")
+    @RequirePermission("posts:review", "posts:publish")
+    def schedule_post(self, id: str, data: dict | None = None, user=None):
+        """Set or clear scheduled_at / ab_label on a post."""
+        tid = resolve_tenant_id(user)
+        data = data or {}
+        with get_session() as session:
+            post = session.get(ContentPost, int(id))
+            if not post or post.tenant_id != tid:
+                raise NotFoundError("Post not found")
+            if post.status == "published":
+                raise ValidationError("Cannot reschedule a published post")
+            raw = data.get("scheduledAt")
+            if raw in (None, "", False):
+                post.scheduled_at = None
+            else:
+                try:
+                    post.scheduled_at = datetime.fromisoformat(
+                        str(raw).replace("Z", "+00:00")
+                    ).replace(tzinfo=None)
+                except Exception as e:
+                    raise ValidationError(f"Invalid scheduledAt: {e}")
+            if "abLabel" in data:
+                label = data.get("abLabel")
+                post.ab_label = str(label)[:16] if label else None
+            post.updated_at = datetime.utcnow()
+            session.add(post)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=user["userId"],
+                action="posts.schedule",
+                resource_type="content_post",
+                resource_id=str(post.post_id),
+                detail=str(post.scheduled_at),
             )
             session.commit()
             session.refresh(post)

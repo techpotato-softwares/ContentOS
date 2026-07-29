@@ -4,6 +4,7 @@ import {
   useApprovePostMutation,
   useRejectPostMutation,
   usePublishPostMutation,
+  useScorePostMutation,
 } from "@/features/api/contentApi"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
@@ -48,18 +49,19 @@ function StatusChips({ status }: { status: string }) {
 }
 
 export function ReviewPage() {
-  const { data: posts = [], isLoading } = useListPostsQuery()
+  const { data: posts = [], isLoading, refetch } = useListPostsQuery()
   const [submit] = useSubmitReviewMutation()
   const [approve] = useApprovePostMutation()
   const [reject] = useRejectPostMutation()
   const [publish] = usePublishPostMutation()
+  const [scorePost, scoreState] = useScorePostMutation()
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-3xl">Review & publish</h1>
         <p className="text-sm text-muted-foreground">
-          Manual gate required — only approved posts can be published to LinkedIn.
+          Score drafts, approve, then publish now — or wait for scheduled A/B slots.
         </p>
       </div>
       {isLoading && <p className="text-sm">Loading…</p>}
@@ -86,8 +88,36 @@ export function ReviewPage() {
                   {p.headline || p.layout?.headline}
                 </h3>
               )}
+              {(p.abLabel || p.scheduledAt) && (
+                <div className="text-[11px] text-muted-foreground flex flex-wrap gap-2">
+                  {p.abLabel && <span className="text-primary">Variant {p.abLabel}</span>}
+                  {p.scheduledAt && (
+                    <span>Scheduled {new Date(p.scheduledAt).toLocaleString()}</span>
+                  )}
+                </div>
+              )}
               <p className="text-sm line-clamp-4 whitespace-pre-wrap">{p.caption}</p>
+              {p.score && (
+                <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span>AI score</span>
+                    <span className="font-display text-base">{p.score.overall}</span>
+                  </div>
+                  <p className="text-muted-foreground line-clamp-2">{p.score.summary}</p>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={scoreState.isLoading}
+                  onClick={async () => {
+                    await scorePost(p.postId)
+                    void refetch()
+                  }}
+                >
+                  {p.score ? "Re-score" : "Score"}
+                </Button>
                 {p.status === "draft" && (
                   <Button size="sm" onClick={() => void submit(p.postId)}>
                     Submit review
@@ -105,7 +135,7 @@ export function ReviewPage() {
                 )}
                 {p.status === "approved" && (
                   <Button size="sm" variant="secondary" onClick={() => void publish(p.postId)}>
-                    Publish to LinkedIn
+                    {p.scheduledAt ? "Publish now" : "Publish to LinkedIn"}
                   </Button>
                 )}
                 {p.status === "published" && (

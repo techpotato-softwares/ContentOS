@@ -1,14 +1,29 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
-import { MessageSquarePlus, History, Loader2, Clock } from "lucide-react"
+import {
+  MessageSquarePlus,
+  History,
+  Loader2,
+  Clock,
+  Link2,
+  FileUp,
+  Sparkles,
+  Gauge,
+} from "lucide-react"
 import {
   useChatMutation,
   useGenerateMutation,
   useListSessionsQuery,
   useLazyGetSessionMessagesQuery,
   useGetImageModelsQuery,
+  useScorePostMutation,
+  useScoreBatchMutation,
+  useRepurposeMutation,
+  useAbScheduleMutation,
   type ContentPost,
+  type AbScheduleSuggestion,
+  type PostScore,
 } from "@/features/api/contentApi"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/input"
@@ -18,11 +33,11 @@ import { cn } from "@/shared/lib/utils"
 type Msg = { role: "user" | "assistant"; content: string }
 
 const GEN_STAGES = [
-  { afterSec: 0, label: "Planning 3 on-brand variants…" },
-  { afterSec: 8, label: "Checking claims against company context…" },
-  { afterSec: 18, label: "Generating visual backgrounds…" },
-  { afterSec: 45, label: "Composing brand layout + logo…" },
-  { afterSec: 75, label: "Almost done — uploading creatives…" },
+  { afterSec: 0, label: "Planning on-brand variants" },
+  { afterSec: 8, label: "Fact-checking against context" },
+  { afterSec: 18, label: "Generating right-side visuals" },
+  { afterSec: 45, label: "Composing crisp brand overlay" },
+  { afterSec: 75, label: "Uploading creatives" },
 ]
 
 function formatElapsed(sec: number) {
@@ -31,28 +46,70 @@ function formatElapsed(sec: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
 }
 
+function ScoreBadge({ score }: { score: PostScore }) {
+  const color =
+    score.overall >= 80
+      ? "border-emerald-500/35 bg-emerald-500/10"
+      : score.overall >= 65
+        ? "border-amber-500/35 bg-amber-500/10"
+        : "border-destructive/35 bg-destructive/10"
+  return (
+    <div className={cn("rounded-xl border p-2.5 space-y-1.5 text-[11px]", color)}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="uppercase tracking-wide text-muted-foreground">Score</span>
+        <span className="font-display text-lg tabular-nums leading-none">{score.overall}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-1">
+        {[
+          ["Cl", score.clarity],
+          ["Hk", score.hook],
+          ["Br", score.brandFit],
+          ["CTA", score.cta],
+        ].map(([label, val]) => (
+          <div key={String(label)} className="rounded-md bg-background/60 px-1 py-0.5 text-center">
+            <div className="text-[9px] text-muted-foreground">{label}</div>
+            <div className="font-medium tabular-nums">{val}</div>
+          </div>
+        ))}
+      </div>
+      <p className="text-muted-foreground line-clamp-2 leading-snug">{score.summary}</p>
+    </div>
+  )
+}
+
 export function AgentPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
       content:
-        "Tell me what LinkedIn image post you want. We generate AI backgrounds and overlay exact brand text + logo (no spelling drift). Then click Generate 3 variants.",
+        "Describe a LinkedIn post, or paste a URL / PDF to repurpose. I’ll generate 3 on-brand variants with sharp template text.",
     },
   ])
   const [input, setInput] = useState("")
   const [sessionId, setSessionId] = useState<number | undefined>()
   const [chat, chatState] = useChatMutation()
   const [generate, genState] = useGenerateMutation()
+  const [scorePost, scoreState] = useScorePostMutation()
+  const [scoreBatch, scoreBatchState] = useScoreBatchMutation()
+  const [repurpose, repurposeState] = useRepurposeMutation()
+  const [abSchedule, abState] = useAbScheduleMutation()
   const { data: sessions = [], refetch: refetchSessions } = useListSessionsQuery()
   const { data: modelsPayload } = useGetImageModelsQuery()
   const [loadMessages] = useLazyGetSessionMessagesQuery()
   const [posts, setPosts] = useState<ContentPost[]>([])
+  const [batchId, setBatchId] = useState<number | undefined>()
+  const [suggestions, setSuggestions] = useState<AbScheduleSuggestion[]>([])
+  const [strategy, setStrategy] = useState<string | null>(null)
   const [preset, setPreset] = useState("linkedin_landscape")
   const [renderMode, setRenderMode] = useState<"template" | "native_text">("template")
   const [imageModel, setImageModel] = useState("gpt-image-1")
   const [elapsed, setElapsed] = useState(0)
   const [genError, setGenError] = useState<string | null>(null)
+  const [repurposeUrl, setRepurposeUrl] = useState("")
+  const fileRef = useRef<HTMLInputElement>(null)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const busy = genState.isLoading || repurposeState.isLoading
 
   useEffect(() => {
     if (modelsPayload?.defaultPreset) setPreset(modelsPayload.defaultPreset)
@@ -70,14 +127,18 @@ export function AgentPage() {
   }, [searchParams, setSearchParams])
 
   useEffect(() => {
-    if (!genState.isLoading) return
+    if (!busy) return
     setElapsed(0)
     const started = Date.now()
     const id = window.setInterval(() => {
       setElapsed(Math.floor((Date.now() - started) / 1000))
     }, 250)
     return () => window.clearInterval(id)
-  }, [genState.isLoading])
+  }, [busy])
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+  }, [messages, busy])
 
   const stageLabel = useMemo(() => {
     let label = GEN_STAGES[0].label
@@ -104,23 +165,24 @@ export function AgentPage() {
     setMessages(
       mapped.length
         ? mapped
-        : [
-            {
-              role: "assistant",
-              content: "Continue this chat or generate LinkedIn variants from your brief.",
-            },
-          ],
+        : [{ role: "assistant", content: "Continue this chat or generate variants." }],
     )
-    setPosts([])
+    setPosts(res.posts || [])
+    setBatchId(res.batchId ?? undefined)
+    setSuggestions([])
+    setStrategy(null)
   }
 
   const newChat = () => {
     setSessionId(undefined)
     setPosts([])
+    setBatchId(undefined)
+    setSuggestions([])
+    setStrategy(null)
     setMessages([
       {
         role: "assistant",
-        content: "New chat — describe the LinkedIn informative post you want to generate.",
+        content: "New chat — describe the LinkedIn post you want.",
       },
     ])
   }
@@ -138,7 +200,7 @@ export function AgentPage() {
     } catch {
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: "Sorry — chat failed. Check API and try again." },
+        { role: "assistant", content: "Chat failed — check the API and try again." },
       ])
     }
   }
@@ -157,244 +219,479 @@ export function AgentPage() {
         renderMode,
         imageModel,
       }).unwrap()
+      if (res.sessionId) setSessionId(res.sessionId)
       setPosts(res.posts)
+      setBatchId(res.batchId)
+      setSuggestions([])
+      setStrategy(null)
       setMessages((m) => [
         ...m,
         {
           role: "assistant",
-          content: `Generated ${res.posts.length} variants in ${formatElapsed(elapsed)} (batch #${res.batchId}, ${res.renderMode || renderMode}). View or download below, then open Review to approve.`,
+          content: `Ready — ${res.posts.length} variants (batch #${res.batchId}). Score the batch or apply an A/B schedule.`,
         },
       ])
       void refetchSessions()
     } catch {
-      setGenError(`Generation failed after ${formatElapsed(elapsed)}. Check OpenAI quota/model, then retry.`)
+      setGenError(`Generation failed after ${formatElapsed(elapsed)}. Check OpenAI quota, then retry.`)
+    }
+  }
+
+  const onRepurposeUrl = async () => {
+    if (!repurposeUrl.trim()) return
+    setGenError(null)
+    const note = `Repurpose: ${repurposeUrl.trim()}`
+    setMessages((m) => [...m, { role: "user", content: note }])
+    try {
+      const res = await repurpose({
+        url: repurposeUrl.trim(),
+        generate: true,
+        sessionId,
+        preset,
+        renderMode,
+        imageModel,
+      }).unwrap()
+      if (res.sessionId) setSessionId(res.sessionId)
+      setPosts(res.posts || [])
+      setBatchId(res.batchId)
+      setSuggestions([])
+      setStrategy(null)
+      setRepurposeUrl("")
       setMessages((m) => [
         ...m,
         {
           role: "assistant",
-          content: "Generation failed — check OpenAI image quota/model, then retry.",
+          content: `Repurposed “${res.extracted?.title || "source"}” into ${res.posts?.length || 0} variants.`,
         },
       ])
+      void refetchSessions()
+    } catch {
+      setGenError("URL repurpose failed — link may be blocked or empty.")
     }
   }
 
-  const selectedModel = modelsPayload?.models?.find((m) => m.id === imageModel)
+  const onRepurposePdf = async (file: File) => {
+    setGenError(null)
+    const reader = new FileReader()
+    const b64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => {
+        const result = String(reader.result || "")
+        resolve(result.includes(",") ? result.split(",", 2)[1] : result)
+      }
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+    })
+    const note = `Repurpose PDF: ${file.name}`
+    setMessages((m) => [...m, { role: "user", content: note }])
+    try {
+      const res = await repurpose({
+        pdfBase64: b64,
+        filename: file.name,
+        generate: true,
+        sessionId,
+        preset,
+        renderMode,
+        imageModel,
+      }).unwrap()
+      if (res.sessionId) setSessionId(res.sessionId)
+      setPosts(res.posts || [])
+      setBatchId(res.batchId)
+      setSuggestions([])
+      setStrategy(null)
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content: `Repurposed “${res.extracted?.title || file.name}” into ${res.posts?.length || 0} variants.`,
+        },
+      ])
+      void refetchSessions()
+    } catch {
+      setGenError("PDF repurpose failed — use a text PDF under 12MB.")
+    }
+  }
+
+  const onScore = async (postId: number) => {
+    try {
+      const updated = await scorePost(postId).unwrap()
+      setPosts((prev) => prev.map((p) => (p.postId === postId ? { ...p, ...updated } : p)))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const onScoreAll = async () => {
+    if (!batchId) return
+    try {
+      const res = await scoreBatch(batchId).unwrap()
+      if (res.posts?.length) setPosts(res.posts)
+    } catch {
+      setGenError("Batch scoring failed.")
+    }
+  }
+
+  const onSuggestSchedule = async (apply = false) => {
+    if (!batchId) return
+    try {
+      const res = await abSchedule({ batchId, apply }).unwrap()
+      setSuggestions(res.suggestions || [])
+      setStrategy(res.strategy || null)
+      if (apply && res.posts?.length) {
+        setPosts(res.posts)
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: `A/B schedule applied. Approve in Review — auto-publish runs when due.`,
+          },
+        ])
+      }
+    } catch {
+      setGenError("Could not build A/B schedule.")
+    }
+  }
 
   return (
-    <div className="grid lg:grid-cols-[220px_1fr_1fr] gap-4 h-full">
-      <aside className="space-y-3 min-h-[70vh]">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-display text-lg flex items-center gap-2">
-            <History className="h-4 w-4" />
-            History
-          </h2>
-          <Button size="sm" variant="outline" onClick={newChat}>
-            <MessageSquarePlus className="h-3.5 w-3.5" />
-            New
-          </Button>
-        </div>
-        <div className="space-y-1 overflow-y-auto max-h-[70vh] pr-1">
-          {sessions.map((s) => (
-            <button
-              key={s.sessionId}
-              type="button"
-              onClick={() => void openSession(s.sessionId)}
-              className={cn(
-                "w-full text-left rounded-xl px-3 py-2 text-xs border border-transparent hover:bg-muted transition-colors",
-                sessionId === s.sessionId && "bg-primary/15 border-primary/30",
-              )}
-            >
-              <div className="line-clamp-2 font-medium">{s.title || `Chat #${s.sessionId}`}</div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">
-                {s.updatedAt ? new Date(s.updatedAt).toLocaleString() : ""}
-              </div>
-            </button>
-          ))}
-          {!sessions.length && (
-            <p className="text-xs text-muted-foreground px-1">No chats yet — send a message.</p>
-          )}
-        </div>
-      </aside>
-
-      <div className="flex flex-col gap-4 min-h-[70vh]">
+    <div className="flex flex-col h-full min-h-0 gap-3 overflow-hidden">
+      <header className="shrink-0 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl">Agent chat</h1>
-          <p className="text-sm text-muted-foreground">
-            Template overlay (default) prints exact headline + logo — AI paints the background only.
+          <h1 className="font-display text-2xl md:text-3xl leading-tight">Agent</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Brief · URL · PDF → 3 variants → score → schedule
           </p>
         </div>
-
-        <div className="grid sm:grid-cols-3 gap-2">
-          <label className="text-xs space-y-1">
-            <span className="text-muted-foreground">Preset</span>
-            <select
-              className="h-9 w-full rounded-xl border border-border bg-background/60 px-2 text-sm"
-              value={preset}
-              onChange={(e) => setPreset(e.target.value)}
-              disabled={genState.isLoading}
-            >
-              {(modelsPayload?.presets || [{ id: "linkedin_landscape", width: 1200, height: 627 }]).map(
-                (p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.id.replace("linkedin_", "")} ({p.width}×{p.height})
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-          <label className="text-xs space-y-1">
-            <span className="text-muted-foreground">Image model</span>
-            <select
-              className="h-9 w-full rounded-xl border border-border bg-background/60 px-2 text-sm"
-              value={imageModel}
-              onChange={(e) => setImageModel(e.target.value)}
-              disabled={genState.isLoading}
-            >
-              {(modelsPayload?.models || []).map((m) => (
-                <option key={m.id} value={m.id} disabled={!m.available}>
-                  {m.label}
-                  {!m.available ? " (unavailable)" : ""}
+        <div className="flex flex-wrap gap-2">
+          <select
+            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
+            value={preset}
+            onChange={(e) => setPreset(e.target.value)}
+            disabled={busy}
+          >
+            {(modelsPayload?.presets || [{ id: "linkedin_landscape", width: 1920, height: 1005 }]).map(
+              (p) => (
+                <option key={p.id} value={p.id}>
+                  {p.id.replace("linkedin_", "")} ({p.width}×{p.height})
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs space-y-1">
-            <span className="text-muted-foreground">Render mode</span>
-            <select
-              className="h-9 w-full rounded-xl border border-border bg-background/60 px-2 text-sm"
-              value={renderMode}
-              onChange={(e) => setRenderMode(e.target.value as "template" | "native_text")}
-              disabled={genState.isLoading}
-            >
-              <option value="template">Template overlay (recommended)</option>
-              <option value="native_text">Native text (experimental)</option>
-            </select>
-          </label>
-        </div>
-        {selectedModel && (
-          <p className="text-[11px] text-muted-foreground -mt-2">
-            {selectedModel.bestFor} · native text: {selectedModel.nativeTextQuality} · {selectedModel.costHint}
-          </p>
-        )}
-
-        <div className="flex-1 space-y-3 overflow-y-auto rounded-2xl border border-border p-4 bg-background/40">
-          <AnimatePresence initial={false}>
-            {messages.map((m, i) => (
-              <motion.div
-                key={`${i}-${m.role}-${m.content.slice(0, 12)}`}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={
-                  m.role === "user"
-                    ? "ml-8 rounded-2xl bg-primary text-primary-foreground px-4 py-3 text-sm"
-                    : "mr-8 rounded-2xl bg-muted px-4 py-3 text-sm"
-                }
-              >
-                {m.content}
-              </motion.div>
+              ),
+            )}
+          </select>
+          <select
+            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs max-w-[160px]"
+            value={imageModel}
+            onChange={(e) => setImageModel(e.target.value)}
+            disabled={busy}
+          >
+            {(modelsPayload?.models || []).map((m) => (
+              <option key={m.id} value={m.id} disabled={!m.available}>
+                {m.label}
+              </option>
             ))}
-          </AnimatePresence>
+          </select>
+          <select
+            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
+            value={renderMode}
+            onChange={(e) => setRenderMode(e.target.value as "template" | "native_text")}
+            disabled={busy}
+          >
+            <option value="template">Template overlay</option>
+            <option value="native_text">Native text</option>
+          </select>
         </div>
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="e.g. Informative post about contract lifecycle management for legal ops…"
-          disabled={genState.isLoading}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault()
-              void send()
-            }
-          }}
-        />
-        <div className="flex gap-2">
-          <Button onClick={() => void send()} disabled={chatState.isLoading || genState.isLoading} className="flex-1">
-            Send
-          </Button>
-          <Button variant="secondary" onClick={() => void onGenerate()} disabled={genState.isLoading}>
-            {genState.isLoading ? "Generating…" : "Generate 3 variants"}
-          </Button>
-        </div>
+      </header>
 
-        {genState.isLoading && (
-          <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                {stageLabel}
+      <div className="grid lg:grid-cols-[200px_minmax(0,1.1fr)_minmax(0,0.95fr)] gap-3 flex-1 min-h-0 overflow-hidden">
+        {/* History */}
+        <aside className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/30 p-2">
+          <div className="flex items-center justify-between px-1 shrink-0">
+            <span className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
+              <History className="h-3.5 w-3.5" />
+              Chats
+            </span>
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={newChat}>
+              <MessageSquarePlus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5">
+            {sessions.map((s) => (
+              <button
+                key={s.sessionId}
+                type="button"
+                onClick={() => void openSession(s.sessionId)}
+                className={cn(
+                  "w-full text-left rounded-xl px-2.5 py-2 text-[11px] border border-transparent hover:bg-muted/80 transition-colors",
+                  sessionId === s.sessionId && "bg-primary/12 border-primary/25",
+                )}
+              >
+                <div className="line-clamp-2 font-medium leading-snug">
+                  {s.title || `Chat #${s.sessionId}`}
+                </div>
+              </button>
+            ))}
+            {!sessions.length && (
+              <p className="text-[11px] text-muted-foreground px-1">No chats yet.</p>
+            )}
+          </div>
+        </aside>
+
+        {/* Chat column */}
+        <section className="relative min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/40">
+          <div className="shrink-0 border-b border-border/60 px-3 py-2 space-y-2">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  className="h-8 w-full rounded-lg border border-border bg-background/70 pl-8 pr-2 text-xs"
+                  placeholder="Repurpose from URL…"
+                  value={repurposeUrl}
+                  onChange={(e) => setRepurposeUrl(e.target.value)}
+                  disabled={busy}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void onRepurposeUrl()
+                  }}
+                />
               </div>
-              <div className="flex items-center gap-1.5 text-sm tabular-nums text-primary">
-                <Clock className="h-3.5 w-3.5" />
-                {formatElapsed(elapsed)}
-              </div>
-            </div>
-            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-              <motion.div
-                className="h-full bg-primary/80 rounded-full"
-                animate={{ width: `${Math.min(92, 12 + elapsed * 1.1)}%` }}
-                transition={{ ease: "linear", duration: 0.25 }}
+              <Button
+                size="sm"
+                className="h-8"
+                variant="secondary"
+                disabled={busy || !repurposeUrl.trim()}
+                onClick={() => void onRepurposeUrl()}
+              >
+                Go
+              </Button>
+              <Button
+                size="sm"
+                className="h-8"
+                variant="outline"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                <FileUp className="h-3.5 w-3.5" />
+                PDF
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void onRepurposePdf(f)
+                  e.target.value = ""
+                }}
               />
             </div>
-            <ol className="grid grid-cols-1 gap-1 text-[11px] text-muted-foreground">
-              {GEN_STAGES.map((s, i) => (
-                <li key={s.label} className={cn(i <= stageIndex ? "text-foreground" : "opacity-50")}>
-                  {i < stageIndex ? "✓" : i === stageIndex ? "●" : "○"} {s.label}
-                </li>
-              ))}
-            </ol>
-            <p className="text-[11px] text-muted-foreground">
-              This usually takes 1–3 minutes (3 image API calls + composition). Keep this tab open.
-            </p>
           </div>
-        )}
-        {genError && !genState.isLoading && (
-          <p className="text-sm text-destructive">{genError}</p>
-        )}
-      </div>
 
-      <div className="space-y-4">
-        <h2 className="font-display text-xl">Variants</h2>
-        <div className="grid gap-4">
-          <AnimatePresence>
-            {posts.map((p) => (
-              <motion.article
-                key={p.postId}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-2xl border border-border overflow-hidden bg-background/50"
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2.5">
+            <AnimatePresence initial={false}>
+              {messages.map((m, i) => (
+                <motion.div
+                  key={`${i}-${m.role}-${m.content.slice(0, 16)}`}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={cn(
+                    "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                    m.role === "user"
+                      ? "ml-auto bg-primary text-primary-foreground"
+                      : "mr-auto bg-muted/80",
+                  )}
+                >
+                  {m.content}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            <div ref={chatEndRef} />
+          </div>
+
+          <div className="shrink-0 border-t border-border/60 p-3 space-y-2 bg-background/50">
+            {genError && !busy && <p className="text-xs text-destructive">{genError}</p>}
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="What should this LinkedIn post say?"
+              disabled={busy}
+              className="min-h-[72px] max-h-[120px] resize-none text-sm"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault()
+                  void send()
+                }
+              }}
+            />
+            <div className="flex gap-2">
+              <Button
+                onClick={() => void send()}
+                disabled={chatState.isLoading || busy}
+                className="flex-1"
+                size="sm"
               >
-                <PostMedia imageUrl={p.imageUrl} filename={`contentos-post-${p.postId}.png`} />
-                <div className="px-4 pb-4 space-y-2">
-                  <div className="text-xs uppercase tracking-wide text-primary">{p.angle}</div>
-                  {(p.headline || p.layout?.headline) && (
-                    <h3 className="font-display text-lg leading-snug">
-                      {p.headline || p.layout?.headline}
-                    </h3>
-                  )}
-                  {(p.subhead || p.layout?.subhead) && (
-                    <p className="text-sm text-muted-foreground">{p.subhead || p.layout?.subhead}</p>
-                  )}
-                  {(p.bullets || p.layout?.bullets)?.length ? (
-                    <ul className="text-xs list-disc pl-4 space-y-0.5">
-                      {(p.bullets || p.layout?.bullets || []).map((b) => (
-                        <li key={b}>{b}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <p className="text-sm whitespace-pre-wrap">{p.caption}</p>
-                  <div className="text-xs text-muted-foreground">
-                    #{p.postId} · {p.status}
+                Send
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void onGenerate()}
+                disabled={busy}
+              >
+                {busy ? "Working…" : "Generate 3"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Overlay loader — does not grow page height */}
+          <AnimatePresence>
+            {busy && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-20 flex items-center justify-center bg-background/75 backdrop-blur-md p-6"
+              >
+                <div className="w-full max-w-sm rounded-2xl border border-primary/25 bg-card/95 p-5 shadow-elevated space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      {stageLabel}
+                    </div>
+                    <div className="flex items-center gap-1 text-sm tabular-nums text-primary">
+                      <Clock className="h-3.5 w-3.5" />
+                      {formatElapsed(elapsed)}
+                    </div>
                   </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <motion.div
+                      className="h-full bg-primary/80 rounded-full"
+                      animate={{ width: `${Math.min(92, 12 + elapsed * 1.1)}%` }}
+                      transition={{ ease: "linear", duration: 0.25 }}
+                    />
+                  </div>
+                  <ol className="space-y-1 text-[11px] text-muted-foreground">
+                    {GEN_STAGES.map((s, i) => (
+                      <li
+                        key={s.label}
+                        className={cn(i <= stageIndex ? "text-foreground" : "opacity-40")}
+                      >
+                        {i < stageIndex ? "✓" : i === stageIndex ? "●" : "○"} {s.label}
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="text-[11px] text-muted-foreground">
+                    Usually 1–3 min. Stay on this tab — progress stays in place.
+                  </p>
                 </div>
-              </motion.article>
-            ))}
+              </motion.div>
+            )}
           </AnimatePresence>
-          {!posts.length && !genState.isLoading && (
-            <p className="text-sm text-muted-foreground">
-              Generated posts will appear here with View / Download.
-            </p>
-          )}
-        </div>
+        </section>
+
+        {/* Variants */}
+        <section className="min-h-0 flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/30">
+          <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+            <h2 className="font-display text-lg">Variants</h2>
+            {batchId && posts.length >= 2 && (
+              <div className="flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px] px-2"
+                  disabled={scoreBatchState.isLoading}
+                  onClick={() => void onScoreAll()}
+                >
+                  <Gauge className="h-3 w-3" />
+                  Score all
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px] px-2"
+                  disabled={abState.isLoading}
+                  onClick={() => void onSuggestSchedule(false)}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  A/B
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 text-[11px] px-2"
+                  disabled={abState.isLoading}
+                  onClick={() => void onSuggestSchedule(true)}
+                >
+                  Apply
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+            {strategy && (
+              <div className="rounded-xl border border-border bg-muted/40 p-2.5 text-[11px] space-y-1.5">
+                <p className="font-medium">A/B plan</p>
+                <p className="text-muted-foreground">{strategy}</p>
+                <ul className="space-y-0.5">
+                  {suggestions.map((s) => (
+                    <li key={`${s.label}-${s.postId}`}>
+                      <span className="text-primary font-medium">{s.label}</span> · #{s.postId} ·{" "}
+                      {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : "hold"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <AnimatePresence>
+              {posts.map((p) => (
+                <motion.article
+                  key={p.postId}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-xl border border-border overflow-hidden bg-card/40"
+                >
+                  <PostMedia
+                    compact
+                    imageUrl={p.imageUrl}
+                    filename={`contentos-post-${p.postId}.png`}
+                  />
+                  <div className="px-3 pb-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide">
+                      <span className="text-primary">{p.angle}</span>
+                      <span className="text-muted-foreground normal-case">
+                        {p.abLabel ? `Var ${p.abLabel} · ` : ""}#{p.postId}
+                      </span>
+                    </div>
+                    {(p.headline || p.layout?.headline) && (
+                      <h3 className="font-display text-base leading-snug">
+                        {p.headline || p.layout?.headline}
+                      </h3>
+                    )}
+                    <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap">
+                      {p.caption}
+                    </p>
+                    {p.score && <ScoreBadge score={p.score} />}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      disabled={scoreState.isLoading}
+                      onClick={() => void onScore(p.postId)}
+                    >
+                      {p.score ? "Re-score" : "Score"}
+                    </Button>
+                  </div>
+                </motion.article>
+              ))}
+            </AnimatePresence>
+
+            {!posts.length && !busy && (
+              <div className="h-full min-h-[200px] flex items-center justify-center text-center px-6">
+                <p className="text-sm text-muted-foreground">
+                  Variants appear here — generate from chat, URL, or PDF.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   )

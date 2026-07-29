@@ -39,6 +39,80 @@ export type ContentPost = {
     bullets?: string[]
     caption?: string
   }
+  score?: PostScore
+  sourceType?: string
+  sourceRef?: string
+  abLabel?: string
+  scheduledAt?: string | null
+  publishedAt?: string | null
+}
+
+export type PostScore = {
+  clarity: number
+  hook: number
+  brandFit: number
+  cta: number
+  overall: number
+  summary: string
+  fixes: string[]
+}
+
+export type AbScheduleSuggestion = {
+  label: string
+  postId: number
+  angle?: string
+  scheduledAt: string
+  slotHint?: string
+  reason?: string
+}
+
+export type AbScheduleResult = {
+  batchId: number
+  strategy: string
+  suggestions: AbScheduleSuggestion[]
+  applied: boolean
+  posts: ContentPost[]
+}
+
+export type RepurposeResult = {
+  batchId?: number
+  posts: ContentPost[]
+  extracted: {
+    sourceType: string
+    sourceRef: string
+    title: string
+    text: string
+    charCount: number
+    brief: string
+  }
+  preset?: string
+  renderMode?: string
+}
+
+export type WeeklySnapshot = {
+  tenantId?: number
+  tenantName?: string
+  stats: {
+    generated: number
+    batches: number
+    draft: number
+    pendingReview: number
+    approved: number
+    published: number
+    scheduledUpcoming: number
+    byAngle: Record<string, number>
+    topPost?: {
+      postId: number
+      angle: string
+      status: string
+      headline?: string
+      captionPreview?: string
+    } | null
+    auditEvents: number
+    periodStart: string
+    periodEnd: string
+  }
+  tenants?: unknown[]
 }
 
 export type ImageModelInfo = {
@@ -177,7 +251,13 @@ export const contentApi = createApi({
       providesTags: ["Sessions"],
     }),
     getSessionMessages: build.query<
-      { sessionId: number; title: string; messages: ChatMessageRow[] },
+      {
+        sessionId: number
+        title: string
+        messages: ChatMessageRow[]
+        batchId?: number | null
+        posts?: ContentPost[]
+      },
       number
     >({
       query: (sessionId) => `/api/agent/sessions/${sessionId}/messages`,
@@ -194,10 +274,12 @@ export const contentApi = createApi({
     generate: build.mutation<
       {
         batchId: number
+        sessionId?: number
         posts: ContentPost[]
         preset?: string
         renderMode?: string
         imageModel?: string
+        sourceType?: string
       },
       {
         brief: string
@@ -206,11 +288,78 @@ export const contentApi = createApi({
         preset?: string
         renderMode?: string
         imageModel?: string
+        sourceType?: string
+        sourceRef?: string
+        userNote?: string
       }
     >({
       query: (body) => ({ url: "/api/agent/generate", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData(r),
       invalidatesTags: ["Posts", "Sessions"],
+    }),
+    scorePost: build.mutation<ContentPost, number>({
+      query: (id) => ({ url: `/api/agent/posts/${id}/score`, method: "POST" }),
+      transformResponse: (r: unknown) => unwrapData<ContentPost>(r),
+      invalidatesTags: ["Posts"],
+    }),
+    scoreBatch: build.mutation<{ batchId: number; posts: ContentPost[] }, number>({
+      query: (batchId) => ({
+        url: `/api/agent/batches/${batchId}/score`,
+        method: "POST",
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Posts"],
+    }),
+    repurpose: build.mutation<
+      RepurposeResult & { sessionId?: number; batchId?: number },
+      {
+        url?: string
+        pdfBase64?: string
+        filename?: string
+        generate?: boolean
+        sessionId?: number
+        preset?: string
+        renderMode?: string
+        imageModel?: string
+      }
+    >({
+      query: (body) => ({ url: "/api/agent/repurpose", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Posts", "Sessions"],
+    }),
+    abSchedule: build.mutation<AbScheduleResult, { batchId: number; apply?: boolean }>({
+      query: ({ batchId, apply }) => ({
+        url: `/api/agent/batches/${batchId}/ab-schedule`,
+        method: "POST",
+        body: { apply: !!apply },
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Posts"],
+    }),
+    schedulePost: build.mutation<
+      ContentPost,
+      { id: number; scheduledAt?: string | null; abLabel?: string | null }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/api/posts/${id}/schedule`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Posts"],
+    }),
+    getWeeklySnapshot: build.query<WeeklySnapshot, void>({
+      query: () => "/api/agent/insights/weekly-snapshot",
+      transformResponse: (r: unknown) => unwrapData(r),
+      providesTags: ["Insights"],
+    }),
+    sendWeeklySnapshot: build.mutation<WeeklySnapshot, void>({
+      query: () => ({
+        url: "/api/agent/insights/weekly-snapshot/send",
+        method: "POST",
+        body: {},
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
     }),
     getSuggestions: build.query<{ suggestions: ContentSuggestion[] }, void>({
       query: () => "/api/agent/insights/suggestions",
@@ -281,6 +430,13 @@ export const {
   useLazyGetSessionMessagesQuery,
   useChatMutation,
   useGenerateMutation,
+  useScorePostMutation,
+  useScoreBatchMutation,
+  useRepurposeMutation,
+  useAbScheduleMutation,
+  useSchedulePostMutation,
+  useGetWeeklySnapshotQuery,
+  useSendWeeklySnapshotMutation,
   useGetSuggestionsQuery,
   useGetIndustryNewsQuery,
   useGetAnalyticsInsightsQuery,

@@ -46,9 +46,15 @@
         { "method": "POST", "path": "/api/agent/chat", "controller": "AgentController", "action": "chat" },
         { "method": "POST", "path": "/api/agent/generate", "controller": "AgentController", "action": "generate" },
         { "method": "GET", "path": "/api/agent/batches/{id}", "controller": "AgentController", "action": "get_batch" },
+        { "method": "POST", "path": "/api/agent/batches/{id}/ab-schedule", "controller": "AgentController", "action": "ab_schedule" },
+        { "method": "POST", "path": "/api/agent/posts/{id}/score", "controller": "AgentController", "action": "score_post" },
+        { "method": "POST", "path": "/api/agent/batches/{id}/score", "controller": "AgentController", "action": "score_batch" },
+        { "method": "POST", "path": "/api/agent/repurpose", "controller": "AgentController", "action": "repurpose" },
         { "method": "GET", "path": "/api/agent/insights/suggestions", "controller": "AgentController", "action": "insights_suggestions" },
         { "method": "GET", "path": "/api/agent/insights/news", "controller": "AgentController", "action": "insights_news" },
-        { "method": "GET", "path": "/api/agent/insights/analytics", "controller": "AgentController", "action": "insights_analytics" }
+        { "method": "GET", "path": "/api/agent/insights/analytics", "controller": "AgentController", "action": "insights_analytics" },
+        { "method": "GET", "path": "/api/agent/insights/weekly-snapshot", "controller": "AgentController", "action": "weekly_snapshot_preview" },
+        { "method": "POST", "path": "/api/agent/insights/weekly-snapshot/send", "controller": "AgentController", "action": "weekly_snapshot_send" }
       ]
     },
     "publishing": {
@@ -62,7 +68,8 @@
         { "method": "POST", "path": "/api/posts/{id}/submit-review", "controller": "PublishingController", "action": "submit_review" },
         { "method": "POST", "path": "/api/posts/{id}/approve", "controller": "PublishingController", "action": "approve" },
         { "method": "POST", "path": "/api/posts/{id}/reject", "controller": "PublishingController", "action": "reject" },
-        { "method": "POST", "path": "/api/posts/{id}/publish", "controller": "PublishingController", "action": "publish" }
+        { "method": "POST", "path": "/api/posts/{id}/publish", "controller": "PublishingController", "action": "publish" },
+        { "method": "POST", "path": "/api/posts/{id}/schedule", "controller": "PublishingController", "action": "schedule_post" }
       ]
     }
   },

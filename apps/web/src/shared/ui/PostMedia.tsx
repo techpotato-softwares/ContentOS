@@ -10,9 +10,17 @@ type Props = {
   filename?: string
   className?: string
   imgClassName?: string
+  /** Compact card: smaller actions, no extra vertical chrome */
+  compact?: boolean
 }
 
-export function PostMedia({ imageUrl, filename = "linkedin-post.png", className, imgClassName }: Props) {
+export function PostMedia({
+  imageUrl,
+  filename = "linkedin-post.png",
+  className,
+  imgClassName,
+  compact = false,
+}: Props) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const src = mediaSrc(imageUrl)
@@ -55,60 +63,77 @@ export function PostMedia({ imageUrl, filename = "linkedin-post.png", className,
           <img
             src={src}
             alt=""
-            className={cn("w-full aspect-[16/9] object-cover object-center", imgClassName)}
+            className={cn(
+              compact
+                ? "w-full aspect-[1.91/1] object-contain object-center bg-black/5"
+                : "w-full aspect-[16/9] object-cover object-center",
+              imgClassName,
+            )}
           />
           <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-          <span className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-black/55 backdrop-blur-md px-3 py-1.5 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-            <ZoomIn className="h-3.5 w-3.5" />
+          <span className="absolute bottom-2 left-2 inline-flex items-center gap-1.5 rounded-full bg-black/55 backdrop-blur-md px-2.5 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <ZoomIn className="h-3 w-3" />
             Preview
           </span>
+          {compact && (
+            <span className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 rounded-lg px-2 text-[11px]"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void onDownload()
+                }}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+            </span>
+          )}
         </button>
-        <div className="flex gap-2 p-3">
-          <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-            <Eye className="h-3.5 w-3.5" />
-            View
-          </Button>
-          <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void onDownload()}>
-            <Download className="h-3.5 w-3.5" />
-            {busy ? "…" : "Download"}
-          </Button>
-        </div>
+        {!compact && (
+          <div className="flex gap-2 p-3">
+            <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+              <Eye className="h-3.5 w-3.5" />
+              View
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void onDownload()}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {busy ? "…" : "Download"}
+            </Button>
+          </div>
+        )}
       </div>
 
       {open &&
         createPortal(
           <div
-            className="fixed inset-0 z-[100] flex flex-col bg-black/85 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
             onClick={() => setOpen(false)}
             role="dialog"
             aria-modal
           >
-            <div
-              className="flex items-center justify-between gap-3 shrink-0 px-4 py-3 border-b border-white/10"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <p className="text-sm text-white/80 truncate">{filename}</p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void onDownload()}>
-                  <Download className="h-3.5 w-3.5" />
-                  Download
-                </Button>
-                <Button size="sm" variant="ghost" className="text-white hover:bg-white/10" onClick={() => setOpen(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div
-              className="flex-1 min-h-0 flex items-center justify-center p-4 sm:p-6"
+            <button
+              type="button"
+              className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
               onClick={() => setOpen(false)}
             >
-              <img
-                src={src}
-                alt=""
-                onClick={(e) => e.stopPropagation()}
-                className="max-w-full max-h-full w-auto h-auto object-contain rounded-xl shadow-2xl"
-              />
-            </div>
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={src}
+              alt=""
+              className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>,
           document.body,
         )}
