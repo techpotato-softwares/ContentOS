@@ -134,11 +134,21 @@ export type ImageModelInfo = {
   available: boolean
 }
 
+export type TextProviderInfo = {
+  id: string
+  label: string
+  model: string
+  available: boolean
+  default?: boolean
+}
+
 export type ImageModelsPayload = {
   models: ImageModelInfo[]
   presets: { id: string; width: number; height: number }[]
   defaultPreset: string
   defaultRenderMode: string
+  textProviders?: TextProviderInfo[]
+  defaultTextProvider?: string
 }
 
 export type ChatSessionRow = {
@@ -273,8 +283,8 @@ export const contentApi = createApi({
       transformResponse: (r: unknown) => unwrapData(r),
     }),
     chat: build.mutation<
-      { sessionId: number; reply: string },
-      { message: string; sessionId?: number }
+      { sessionId: number; reply: string; provider?: string },
+      { message: string; sessionId?: number; aiProvider?: string }
     >({
       query: (body) => ({ url: "/api/agent/chat", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData(r),
@@ -289,6 +299,7 @@ export const contentApi = createApi({
         renderMode?: string
         imageModel?: string
         sourceType?: string
+        aiProvider?: string
       },
       {
         brief: string
@@ -297,6 +308,7 @@ export const contentApi = createApi({
         preset?: string
         renderMode?: string
         imageModel?: string
+        aiProvider?: string
         sourceType?: string
         sourceRef?: string
         userNote?: string
@@ -330,6 +342,7 @@ export const contentApi = createApi({
         preset?: string
         renderMode?: string
         imageModel?: string
+        aiProvider?: string
       }
     >({
       query: (body) => ({ url: "/api/agent/repurpose", method: "POST", body }),

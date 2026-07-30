@@ -615,6 +615,110 @@ POSTS JSON:
         return _normalize_ab_schedule(data, posts)
 
 
+class GeminiProvider(OpenAIProvider):
+    """Google Gemini for text/planning. Images stay on OpenAI via image_providers."""
+
+    def __init__(self):
+        self.api_key = (os.environ.get("GEMINI_API_KEY") or "").strip().strip('"').strip("'")
+        self.model = (os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash").strip()
+        # Kept for OpenAIProvider.generate_image fallback if ever called
+        self.image_model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+        if not self.api_key:
+            raise AppError(
+                "GEMINI_API_KEY is missing. Set it in apps/api/.env and restart the API.",
+                500,
+                "AI_CONFIG",
+            )
+
+    def _gemini_url(self) -> str:
+        model = self.model
+        return (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent?key={self.api_key}"
+        )
+
+    def _extract_gemini_text(self, data: dict) -> str:
+        try:
+            parts = data["candidates"][0]["content"]["parts"]
+            texts = [p.get("text") or "" for p in parts if isinstance(p, dict)]
+            out = "\n".join(t for t in texts if t).strip()
+            if out:
+                return out
+        except Exception:
+            pass
+        raise AppError(
+            f"Gemini returned empty/unreadable content: {str(data)[:300]}",
+            502,
+            "GEMINI_ERROR",
+        )
+
+    def _chat_json(self, system: str, user: str, temperature: float = 0.7) -> str:
+        payload = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": 8192,
+                "responseMimeType": "application/json",
+            },
+        }
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                r = client.post(self._gemini_url(), json=payload)
+                if r.status_code >= 400:
+                    raise AppError(
+                        f"Gemini failed ({r.status_code}): {r.text[:400]}",
+                        502,
+                        "GEMINI_ERROR",
+                    )
+                return self._extract_gemini_text(r.json())
+        except AppError:
+            raise
+        except Exception as e:
+            raise AppError(f"Gemini error: {e}", 502, "GEMINI_ERROR")
+
+    def chat(self, message: str, context_pack: str, history: list[dict] | None = None) -> str:
+        contents = []
+        for h in (history or [])[-12:]:
+            role = h.get("role") or "user"
+            # Gemini uses "model" for assistant turns
+            g_role = "model" if role == "assistant" else "user"
+            contents.append({"role": g_role, "parts": [{"text": h.get("content") or ""}]})
+        contents.append({"role": "user", "parts": [{"text": message}]})
+        payload = {
+            "systemInstruction": {
+                "parts": [{"text": SYSTEM_STANCE + "\n\n" + context_pack}]
+            },
+            "contents": contents,
+            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 4096},
+        }
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                r = client.post(self._gemini_url(), json=payload)
+                if r.status_code >= 400:
+                    raise AppError(
+                        f"Gemini chat failed ({r.status_code}): {r.text[:400]}",
+                        502,
+                        "GEMINI_ERROR",
+                    )
+                return self._extract_gemini_text(r.json())
+        except AppError:
+            raise
+        except Exception as e:
+            raise AppError(f"Gemini chat error: {e}", 502, "GEMINI_ERROR")
+
+    def generate_image(self, prompt: str) -> bytes:
+        # Main compose path uses image_providers (OpenAI). Keep explicit message if called.
+        if (os.environ.get("OPENAI_API_KEY") or "").strip():
+            return OpenAIProvider.generate_image(OpenAIProvider(), prompt)
+        raise AppError(
+            "Gemini handles text only. Set OPENAI_API_KEY for image backgrounds "
+            "(or choose an OpenAI image model in Agent).",
+            501,
+            "NOT_IMPLEMENTED",
+        )
+
+
 class BedrockProvider(AIProvider):
     def chat(self, message: str, context_pack: str, history: list[dict] | None = None) -> str:
         try:
@@ -857,21 +961,65 @@ def _parse_json_object(text: str) -> dict:
     return data
 
 
-def get_provider() -> AIProvider:
-    name = (os.environ.get("AI_PROVIDER") or "openai").lower().strip()
-    key_present = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
+def list_text_providers() -> list[dict]:
+    """Providers available for chat / plan / score (images stay separate)."""
+    openai_ok = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
+    gemini_ok = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+    default = (os.environ.get("AI_PROVIDER") or "openai").lower().strip()
+    return [
+        {
+            "id": "openai",
+            "label": "OpenAI",
+            "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+            "available": openai_ok,
+            "default": default == "openai",
+        },
+        {
+            "id": "gemini",
+            "label": "Google Gemini",
+            "model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+            "available": gemini_ok,
+            "default": default == "gemini",
+        },
+        {
+            "id": "bedrock",
+            "label": "AWS Bedrock",
+            "model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-3-haiku-20240307-v1:0"),
+            "available": False,  # needs AWS creds; enable when configured
+            "default": default == "bedrock",
+        },
+        {
+            "id": "stub",
+            "label": "Stub (dev)",
+            "model": "stub",
+            "available": True,
+            "default": default == "stub",
+        },
+    ]
+
+
+def get_provider(name: str | None = None) -> AIProvider:
+    resolved = (name or os.environ.get("AI_PROVIDER") or "openai").lower().strip()
+    openai_key = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
+    gemini_key = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
     logger.info(
         "AI provider resolve",
-        {"provider": name, "openai_key_present": key_present},
+        {
+            "provider": resolved,
+            "openai_key_present": openai_key,
+            "gemini_key_present": gemini_key,
+        },
     )
-    if name == "stub":
+    if resolved == "stub":
         return StubProvider()
-    if name == "bedrock":
+    if resolved == "bedrock":
         return BedrockProvider()
-    if name == "openai":
+    if resolved == "gemini":
+        return GeminiProvider()
+    if resolved == "openai":
         return OpenAIProvider()
     raise AppError(
-        f"Unknown AI_PROVIDER={name}. Use openai | bedrock | stub.",
+        f"Unknown AI_PROVIDER={resolved}. Use openai | gemini | bedrock | stub.",
         500,
         "AI_CONFIG",
     )

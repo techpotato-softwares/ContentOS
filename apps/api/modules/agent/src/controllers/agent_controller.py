@@ -9,7 +9,7 @@ from database.models import Tenant, ChatSession, ChatMessage, GenerationBatch, C
 from middleware.error_handler import NotFoundError, ValidationError, create_success_response
 from utils.tenant import resolve_tenant_id, write_audit
 from training.schema import parse_training, render_context_pack, DocumentRef
-from modules.agent.src.providers import get_provider, upload_tenant_image, enrich_image_prompt, ANGLES
+from modules.agent.src.providers import get_provider, upload_tenant_image, enrich_image_prompt, ANGLES, list_text_providers
 from modules.agent.src.post_schema import (
     apply_banned_claims,
     parse_variant_plans,
@@ -304,6 +304,12 @@ class AgentController:
     @RequireModule("agent")
     @RequirePermission("agent:chat")
     def image_models(self, user=None):
+        default_text = (os_provider())
+        providers = list_text_providers()
+        # Prefer env default; else first available
+        default_id = next((p["id"] for p in providers if p.get("default") and p.get("available")), None)
+        if not default_id:
+            default_id = next((p["id"] for p in providers if p.get("available")), default_text)
         return create_success_response(
             {
                 "models": list_image_models(),
@@ -312,6 +318,8 @@ class AgentController:
                 ],
                 "defaultPreset": DEFAULT_PRESET,
                 "defaultRenderMode": "template",
+                "textProviders": providers,
+                "defaultTextProvider": default_id,
             }
         )
 
@@ -354,7 +362,8 @@ class AgentController:
             ).all()
             history = [{"role": m.role, "content": m.content} for m in history_rows if m.role in ("user", "assistant")]
             pack = _load_context_pack(session, tenant)
-            provider = get_provider()
+            ai_name = ((data or {}).get("aiProvider") or (data or {}).get("textProvider") or "").strip() or None
+            provider = get_provider(ai_name)
             reply = provider.chat(message, pack, history)
             session.add(
                 ChatMessage(
@@ -368,7 +377,7 @@ class AgentController:
             session.add(cs)
             session.commit()
             return create_success_response(
-                {"sessionId": session_id, "reply": reply, "provider": (os_provider())}
+                {"sessionId": session_id, "reply": reply, "provider": ai_name or os_provider()}
             )
 
     @Post("/generate")
@@ -391,6 +400,7 @@ class AgentController:
         if render_mode not in ("template", "native_text"):
             render_mode = "template"
         image_model = data.get("imageModel")
+        ai_name = (data.get("aiProvider") or data.get("textProvider") or "").strip() or None
         tid = resolve_tenant_id(user)
         session_id = data.get("sessionId")
         source_type = (data.get("sourceType") or "brief").strip()
@@ -414,7 +424,7 @@ class AgentController:
 
             training = parse_training(tenant.training_json)
             pack = _load_context_pack(session, tenant)
-            provider = get_provider()
+            provider = get_provider(ai_name)
             raw_plans = provider.plan_variants(brief, pack)
             raw_plans = provider.critic_variants(brief, pack, raw_plans)
             plans = parse_variant_plans(raw_plans)
@@ -566,6 +576,7 @@ class AgentController:
                     "renderMode": render_mode,
                     "imageModel": getattr(img_provider, "model_id", image_model),
                     "sourceType": source_type,
+                    "aiProvider": ai_name or os_provider(),
                 },
                 201,
             )
@@ -768,6 +779,7 @@ class AgentController:
             "preset": data.get("preset"),
             "renderMode": data.get("renderMode"),
             "imageModel": data.get("imageModel"),
+            "aiProvider": data.get("aiProvider") or data.get("textProvider"),
             "sourceType": extracted["sourceType"],
             "sourceRef": extracted["sourceRef"],
             "userNote": user_note,

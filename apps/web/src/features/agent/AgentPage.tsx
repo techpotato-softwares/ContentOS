@@ -167,6 +167,7 @@ export function AgentPage() {
   const [preset, setPreset] = useState("linkedin_landscape")
   const [renderMode, setRenderMode] = useState<"template" | "native_text">("template")
   const [imageModel, setImageModel] = useState("gpt-image-1")
+  const [aiProvider, setAiProvider] = useState("openai")
   const [elapsed, setElapsed] = useState(0)
   const [genError, setGenError] = useState<string | null>(null)
   const [repurposeUrl, setRepurposeUrl] = useState("")
@@ -183,6 +184,12 @@ export function AgentPage() {
     if (modelsPayload?.defaultPreset) setPreset(modelsPayload.defaultPreset)
     const firstAvail = modelsPayload?.models?.find((m) => m.available)
     if (firstAvail) setImageModel(firstAvail.id)
+    if (modelsPayload?.defaultTextProvider) {
+      setAiProvider(modelsPayload.defaultTextProvider)
+    } else {
+      const textAvail = modelsPayload?.textProviders?.find((p) => p.available)
+      if (textAvail) setAiProvider(textAvail.id)
+    }
   }, [modelsPayload])
 
   useEffect(() => {
@@ -330,7 +337,7 @@ export function AgentPage() {
     setInput("")
     setMessages((m) => [...m, { role: "user", content: text }])
     try {
-      const res = await chat({ message: text, sessionId }).unwrap()
+      const res = await chat({ message: text, sessionId, aiProvider }).unwrap()
       setSessionId(res.sessionId)
       setMessages((m) => [...m, { role: "assistant", content: res.reply }])
       void refetchSessions()
@@ -360,6 +367,7 @@ export function AgentPage() {
       preset,
       renderMode,
       imageModel,
+      aiProvider,
     })
     abortRef.current = req
     try {
@@ -414,6 +422,7 @@ export function AgentPage() {
       preset,
       renderMode,
       imageModel,
+      aiProvider,
     })
     abortRef.current = req
     try {
@@ -479,6 +488,7 @@ export function AgentPage() {
       preset,
       renderMode,
       imageModel,
+      aiProvider,
     })
     abortRef.current = req
     try {
@@ -608,6 +618,24 @@ export function AgentPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <select
+            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
+            value={aiProvider}
+            onChange={(e) => setAiProvider(e.target.value)}
+            disabled={busy}
+            title="Text / planning model (images stay on OpenAI)"
+          >
+            {(
+              modelsPayload?.textProviders || [
+                { id: "openai", label: "OpenAI", model: "gpt-4o-mini", available: true },
+                { id: "gemini", label: "Google Gemini", model: "gemini-2.0-flash", available: false },
+              ]
+            ).map((p) => (
+              <option key={p.id} value={p.id} disabled={!p.available}>
+                Text: {p.label}
+              </option>
+            ))}
+          </select>
           <select
             className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
             value={preset}
