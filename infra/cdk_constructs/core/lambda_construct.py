@@ -94,7 +94,13 @@ class LambdaConstruct(Construct):
             "LOG_LEVEL": "INFO" if config.environment == "prod" else "DEBUG",
             "AI_PROVIDER": os.environ.get("AI_PROVIDER", "openai"),
             "OPENAI_MODEL": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
-            "OPENAI_IMAGE_MODEL": os.environ.get("OPENAI_IMAGE_MODEL", "dall-e-3"),
+            "OPENAI_IMAGE_MODEL": os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"),
+            "BEDROCK_ENABLED": os.environ.get("BEDROCK_ENABLED", "true"),
+            "BEDROCK_MODEL": os.environ.get(
+                "BEDROCK_MODEL", "anthropic.claude-3-5-haiku-20241022-v1:0"
+            ),
+            "BEDROCK_REGION": os.environ.get("BEDROCK_REGION", ""),
+            "GEMINI_MODEL": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             "LINKEDIN_REDIRECT_URI": os.environ.get("LINKEDIN_REDIRECT_URI", ""),
             "LINKEDIN_FRONTEND_REDIRECT": os.environ.get("LINKEDIN_FRONTEND_REDIRECT", ""),
         }

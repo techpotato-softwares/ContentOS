@@ -75,6 +75,43 @@ def main():
                     )
                 except Exception:
                     pass
+            for col, typ in [
+                ("account_kind", "VARCHAR DEFAULT 'member'"),
+                ("author_urn", "VARCHAR"),
+                ("metadata_json", "TEXT"),
+            ]:
+                try:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS {col} {typ}"
+                        )
+                    )
+                except Exception:
+                    pass
+            try:
+                conn.execute(
+                    text(
+                        "UPDATE social_accounts SET account_kind = 'member' "
+                        "WHERE account_kind IS NULL OR account_kind = ''"
+                    )
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("ALTER TABLE social_accounts DROP CONSTRAINT IF EXISTS uq_tenant_platform")
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text(
+                        "ALTER TABLE social_accounts ADD CONSTRAINT uq_tenant_platform_kind "
+                        "UNIQUE (tenant_id, platform, account_kind)"
+                    )
+                )
+            except Exception:
+                pass
     except Exception:
         pass
     with get_session() as session:

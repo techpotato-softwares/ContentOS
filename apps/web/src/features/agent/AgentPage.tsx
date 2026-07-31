@@ -103,6 +103,8 @@ function PostCard({
   scoring: boolean
   onScore: (id: number) => void
 }) {
+  const fmt = p.format || p.layout?.format || (p.imageUrl ? "image" : "text")
+  const slides = p.slides || p.layout?.slides || []
   return (
     <motion.article
       key={p.postId}
@@ -110,20 +112,47 @@ function PostCard({
       animate={{ opacity: 1, y: 0 }}
       className="rounded-xl border border-border overflow-hidden bg-card/40"
     >
-      <PostMedia compact imageUrl={p.imageUrl} filename={`contentos-post-${p.postId}.png`} />
+      {fmt === "carousel" && slides[0]?.imageUrl ? (
+        <PostMedia
+          compact
+          imageUrl={slides[0].imageUrl}
+          filename={`contentos-carousel-${p.postId}.png`}
+        />
+      ) : fmt === "text" || !p.imageUrl ? (
+        <div className="px-3 pt-3">
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">
+              {fmt === "carousel" ? `Carousel · ${slides.length} slides` : "Text post"}
+            </p>
+            <p className="text-xs whitespace-pre-wrap line-clamp-6">{p.caption}</p>
+          </div>
+        </div>
+      ) : (
+        <PostMedia compact imageUrl={p.imageUrl} filename={`contentos-post-${p.postId}.png`} />
+      )}
       <div className="px-3 pb-3 space-y-2">
         <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide">
-          <span className="text-primary">{p.angle}</span>
+          <span className="text-primary">
+            {p.angle}
+            {fmt !== "image" ? ` · ${fmt}` : ""}
+          </span>
           <span className="text-muted-foreground normal-case">
             {p.abLabel ? `Var ${p.abLabel} · ` : ""}#{p.postId}
           </span>
         </div>
-        {(p.headline || p.layout?.headline) && (
+        {(p.headline || p.layout?.headline) && fmt !== "text" && (
           <h3 className="font-display text-base leading-snug">
             {p.headline || p.layout?.headline}
           </h3>
         )}
-        <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap">{p.caption}</p>
+        {fmt !== "text" && (
+          <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap">
+            {p.caption}
+          </p>
+        )}
+        {fmt === "carousel" && slides.length > 0 && (
+          <p className="text-[10px] text-muted-foreground">{slides.length} slides ready</p>
+        )}
         {p.score && <ScoreBadge score={p.score} />}
         <Button
           size="sm"
@@ -172,13 +201,27 @@ export function AgentPage() {
   const [genError, setGenError] = useState<string | null>(null)
   const [repurposeUrl, setRepurposeUrl] = useState("")
   const [pendingPdf, setPendingPdf] = useState<{ file: File; name: string } | null>(null)
+  const [stagedPdf, setStagedPdf] = useState<{
+    file: File
+    name: string
+    b64: string
+    extractBrief?: string
+    title?: string
+  } | null>(null)
+  const [stagedUrl, setStagedUrl] = useState<{
+    url: string
+    extractBrief?: string
+    title?: string
+  } | null>(null)
+  const [postFormat, setPostFormat] = useState<"text" | "image" | "carousel">("image")
+  const [extracting, setExtracting] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
   const draftRef = useRef<PendingDraft | null>(null)
   const optimisticUserRef = useRef<string | null>(null)
-  const busy = genState.isLoading || repurposeState.isLoading
+  const busy = genState.isLoading || (repurposeState.isLoading && !extracting)
 
   useEffect(() => {
     if (modelsPayload?.defaultPreset) setPreset(modelsPayload.defaultPreset)
@@ -272,7 +315,7 @@ export function AgentPage() {
       setDraftNotice("Draft restored — edit and generate again when ready.")
     } else if (draft.kind === "url") {
       setRepurposeUrl(draft.url)
-      setDraftNotice("URL draft restored — click Go when ready.")
+      setDraftNotice("URL draft restored — stage it again or click Go when ready.")
     } else {
       setPendingPdf({ file: draft.file, name: draft.name })
       setDraftNotice(`PDF “${draft.name}” kept — click Retry PDF when ready.`)
@@ -311,6 +354,8 @@ export function AgentPage() {
     setStrategy(null)
     setDraftNotice(null)
     setPendingPdf(null)
+    setStagedPdf(null)
+    setStagedUrl(null)
   }
 
   const newChat = () => {
@@ -322,6 +367,8 @@ export function AgentPage() {
     setSuggestions([])
     setStrategy(null)
     setPendingPdf(null)
+    setStagedPdf(null)
+    setStagedUrl(null)
     setDraftNotice(null)
     setMessages([
       {
@@ -332,8 +379,14 @@ export function AgentPage() {
   }
 
   const send = async () => {
-    if (!input.trim() || busy) return
+    if (busy) return
     const text = input.trim()
+    // Claude-style: staged PDF/URL + optional context → generate on Send
+    if (stagedPdf || stagedUrl) {
+      await runStagedGenerate(text)
+      return
+    }
+    if (!text) return
     setInput("")
     setMessages((m) => [...m, { role: "user", content: text }])
     try {
@@ -350,7 +403,113 @@ export function AgentPage() {
     }
   }
 
+  const runStagedGenerate = async (userContext: string) => {
+    setGenError(null)
+    setDraftNotice(null)
+    const contextNote = userContext.trim()
+    if (stagedPdf) {
+      const note = contextNote
+        ? `Repurpose PDF: ${stagedPdf.name}\n\n${contextNote}`
+        : `Repurpose PDF: ${stagedPdf.name}`
+      optimisticUserRef.current = note
+      setMessages((m) => [...m, { role: "user", content: note }])
+      setInput("")
+      const req = repurpose({
+        pdfBase64: stagedPdf.b64,
+        filename: stagedPdf.name,
+        generate: true,
+        userContext: contextNote || undefined,
+        format: postFormat,
+        sessionId,
+        preset,
+        renderMode,
+        imageModel,
+        aiProvider,
+      })
+      abortRef.current = req
+      try {
+        const res = await req.unwrap()
+        abortRef.current = null
+        optimisticUserRef.current = null
+        setStagedPdf(null)
+        if (res.sessionId) setSessionId(res.sessionId)
+        mergeNewBatch(res.posts || [], res.batchId, note)
+        setSuggestions([])
+        setStrategy(null)
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: `Generated ${res.posts?.length || 0} ${postFormat} ${
+              (res.posts?.length || 0) === 1 ? "post" : "variants"
+            } from “${res.extracted?.title || stagedPdf.name}”.`,
+          },
+        ])
+        void refetchSessions()
+      } catch (err) {
+        abortRef.current = null
+        dropOptimisticUser()
+        setGenError("PDF generate failed — check the file and try again.")
+      }
+      return
+    }
+    if (stagedUrl) {
+      const note = contextNote
+        ? `Repurpose: ${stagedUrl.url}\n\n${contextNote}`
+        : `Repurpose: ${stagedUrl.url}`
+      optimisticUserRef.current = note
+      setMessages((m) => [...m, { role: "user", content: note }])
+      setInput("")
+      const req = repurpose({
+        url: stagedUrl.url,
+        generate: true,
+        userContext: contextNote || undefined,
+        format: postFormat,
+        sessionId,
+        preset,
+        renderMode,
+        imageModel,
+        aiProvider,
+      })
+      abortRef.current = req
+      try {
+        const res = await req.unwrap()
+        abortRef.current = null
+        optimisticUserRef.current = null
+        setStagedUrl(null)
+        if (res.sessionId) setSessionId(res.sessionId)
+        mergeNewBatch(res.posts || [], res.batchId, note)
+        setSuggestions([])
+        setStrategy(null)
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: `Generated ${res.posts?.length || 0} ${postFormat} ${
+              (res.posts?.length || 0) === 1 ? "post" : "variants"
+            } from “${res.extracted?.title || "URL"}”.`,
+          },
+        ])
+        void refetchSessions()
+      } catch (err) {
+        abortRef.current = null
+        dropOptimisticUser()
+        setGenError("URL generate failed — link may be blocked or empty.")
+      }
+    }
+  }
+
+  const PLACEHOLDER_SEND = (() => {
+    if (stagedPdf) return "Add context for this PDF, then Send to generate…"
+    if (stagedUrl) return "Add context for this URL, then Send to generate…"
+    return "What should this LinkedIn post say?"
+  })()
+
   const onGenerate = async () => {
+    if (stagedPdf || stagedUrl) {
+      await runStagedGenerate(input.trim())
+      return
+    }
     const brief =
       input.trim() ||
       [...messages].reverse().find((m) => m.role === "user")?.content ||
@@ -365,6 +524,7 @@ export function AgentPage() {
       brief,
       sessionId,
       preset,
+      format: postFormat,
       renderMode,
       imageModel,
       aiProvider,
@@ -382,7 +542,9 @@ export function AgentPage() {
         ...m,
         {
           role: "assistant",
-          content: `Ready — ${res.posts.length} variants (batch #${res.batchId}). Score the batch or apply an A/B schedule.`,
+          content: `Ready — ${res.posts.length} ${postFormat} ${
+            res.posts.length === 1 ? "post" : "variants"
+          } (batch #${res.batchId}). Score the batch or apply an A/B schedule.`,
         },
       ])
       void refetchSessions()
@@ -406,56 +568,28 @@ export function AgentPage() {
   const onRepurposeUrl = async () => {
     if (!repurposeUrl.trim()) return
     const url = repurposeUrl.trim()
-    const draft: PendingDraft = { kind: "url", url }
-    draftRef.current = draft
     setGenError(null)
-    setDraftNotice(null)
-    const note = `Repurpose: ${url}`
-    optimisticUserRef.current = note
-    setMessages((m) => [...m, { role: "user", content: note }])
-    setRepurposeUrl("")
-
-    const req = repurpose({
-      url,
-      generate: true,
-      sessionId,
-      preset,
-      renderMode,
-      imageModel,
-      aiProvider,
-    })
-    abortRef.current = req
+    setExtracting(true)
     try {
-      const res = await req.unwrap()
-      abortRef.current = null
-      draftRef.current = null
-      optimisticUserRef.current = null
-      if (res.sessionId) setSessionId(res.sessionId)
-      mergeNewBatch(res.posts || [], res.batchId, note)
-      setSuggestions([])
-      setStrategy(null)
-      setMessages((m) => [
-        ...m,
-        {
-          role: "assistant",
-          content: `Repurposed “${res.extracted?.title || "source"}” into ${res.posts?.length || 0} variants.`,
-        },
-      ])
-      void refetchSessions()
-    } catch (err) {
-      abortRef.current = null
-      if (isAbortError(err)) {
-        dropOptimisticUser()
-        restoreDraft(draftRef.current)
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: "Stopped — URL draft was preserved." },
-        ])
-      } else {
-        dropOptimisticUser()
-        restoreDraft(draftRef.current)
-        setGenError("URL repurpose failed — link may be blocked or empty.")
-      }
+      const res = await repurpose({
+        url,
+        generate: false,
+        sessionId,
+      }).unwrap()
+      setStagedUrl({
+        url,
+        extractBrief: res.extracted?.brief,
+        title: res.extracted?.title,
+      })
+      setStagedPdf(null)
+      setRepurposeUrl("")
+      setDraftNotice(
+        `URL “${res.extracted?.title || url}” attached — add context below, then Send.`,
+      )
+    } catch {
+      setGenError("Could not extract that URL — check the link.")
+    } finally {
+      setExtracting(false)
     }
   }
 
@@ -484,6 +618,7 @@ export function AgentPage() {
       pdfBase64: b64,
       filename: file.name,
       generate: true,
+      format: postFormat,
       sessionId,
       preset,
       renderMode,
@@ -526,8 +661,47 @@ export function AgentPage() {
     }
   }
 
+  const stagePdf = async (file: File) => {
+    setGenError(null)
+    setExtracting(true)
+    try {
+      const reader = new FileReader()
+      const b64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = String(reader.result || "")
+          resolve(result.includes(",") ? result.split(",", 2)[1] : result)
+        }
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(file)
+      })
+      const res = await repurpose({
+        pdfBase64: b64,
+        filename: file.name,
+        generate: false,
+        sessionId,
+      }).unwrap()
+      setStagedPdf({
+        file,
+        name: file.name,
+        b64,
+        extractBrief: res.extracted?.brief,
+        title: res.extracted?.title,
+      })
+      setStagedUrl(null)
+      setPendingPdf(null)
+      setDraftNotice(
+        `PDF “${res.extracted?.title || file.name}” attached — add context below, then Send.`,
+      )
+    } catch {
+      setPendingPdf({ file, name: file.name })
+      setGenError("PDF extract failed — use a text PDF under 12MB, or Retry.")
+    } finally {
+      setExtracting(false)
+    }
+  }
+
   const onRepurposePdf = (file: File) => {
-    void runPdf(file)
+    void stagePdf(file)
   }
 
   const onScore = async (postId: number) => {
@@ -754,6 +928,44 @@ export function AgentPage() {
                 }}
               />
             </div>
+            {stagedPdf && !busy && (
+              <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-[11px]">
+                <FileUp className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="truncate flex-1">
+                  Attached: {stagedPdf.title || stagedPdf.name}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={() => {
+                    setStagedPdf(null)
+                    setDraftNotice(null)
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+            {stagedUrl && !busy && (
+              <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-[11px]">
+                <Link2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="truncate flex-1">
+                  Attached: {stagedUrl.title || stagedUrl.url}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={() => {
+                    setStagedUrl(null)
+                    setDraftNotice(null)
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
             {pendingPdf && !busy && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1.5 text-[11px]">
                 <FileUp className="h-3.5 w-3.5 text-primary shrink-0" />
@@ -779,6 +991,12 @@ export function AgentPage() {
                   <X className="h-3 w-3" />
                 </Button>
               </div>
+            )}
+            {extracting && (
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Extracting attachment…
+              </p>
             )}
           </div>
 
@@ -811,8 +1029,8 @@ export function AgentPage() {
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="What should this LinkedIn post say?"
-              disabled={busy}
+              placeholder={PLACEHOLDER_SEND}
+              disabled={busy || extracting}
               className="min-h-[72px] max-h-[120px] resize-none text-sm"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -821,30 +1039,52 @@ export function AgentPage() {
                 }
               }}
             />
-            <div className="flex gap-2">
-              <Button
-                onClick={() => void send()}
-                disabled={chatState.isLoading || busy}
-                className="flex-1"
-                size="sm"
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                Format
+              </label>
+              <select
+                className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                value={postFormat}
+                disabled={busy}
+                onChange={(e) =>
+                  setPostFormat(e.target.value as "text" | "image" | "carousel")
+                }
               >
-                Send
-              </Button>
-              {busy ? (
+                <option value="image">Image</option>
+                <option value="text">Text</option>
+                <option value="carousel">Carousel</option>
+              </select>
+              <div className="flex gap-2 flex-1 justify-end">
                 <Button
-                  variant="destructive"
+                  onClick={() => void send()}
+                  disabled={
+                    chatState.isLoading ||
+                    busy ||
+                    extracting ||
+                    (!(stagedPdf || stagedUrl) && !input.trim())
+                  }
+                  className="min-w-[88px]"
                   size="sm"
-                  className="gap-1.5 min-w-[110px]"
-                  onClick={cancelGenerate}
                 >
-                  <Square className="h-3 w-3 fill-current" />
-                  Stop
+                  Send
                 </Button>
-              ) : (
-                <Button variant="secondary" size="sm" onClick={() => void onGenerate()}>
-                  Generate 3
-                </Button>
-              )}
+                {busy ? (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1.5 min-w-[110px]"
+                    onClick={cancelGenerate}
+                  >
+                    <Square className="h-3 w-3 fill-current" />
+                    Stop
+                  </Button>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => void onGenerate()}>
+                    {postFormat === "carousel" ? "Generate carousel" : "Generate"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 

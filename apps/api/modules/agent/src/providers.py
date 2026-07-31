@@ -13,10 +13,46 @@ from utils.s3 import get_s3_config
 from middleware.error_handler import AppError
 
 
-SYSTEM_STANCE = """You are ContentOS, a B2B LinkedIn content assistant for a company tenant.
+SYSTEM_STANCE = """You are ContentOS, a LinkedIn content assistant for a company tenant.
 Use COMPANY CONTEXT for brand voice, colors, and known facts so posts stay consistent.
-Fulfill the user's request even if the topic is not listed in context.
-Do not invent false company metrics, clients, or awards; stay generic or ask briefly if needed — still help generate.
+Fulfill the USER BRIEF topic fully — every variant must stay centered on that topic.
+Do not invent false company metrics, clients, or awards. If a fact is missing, omit it or use non-numeric framing — never invent numbers. Do NOT replace the brief topic with a generic company promo.
+"""
+
+CAPTION_LENGTH_RANGES = {
+    "short": (80, 120),
+    "medium": (150, 220),
+    "long": (220, 320),
+}
+
+
+def caption_length_rule(preference: str | None = None) -> str:
+    pref = (preference or "medium").strip().lower()
+    if pref not in CAPTION_LENGTH_RANGES:
+        pref = "medium"
+    lo, hi = CAPTION_LENGTH_RANGES[pref]
+    return (
+        f"Caption length preference '{pref}': write {lo}–{hi} words "
+        f"(never fewer than {lo} words)."
+    )
+
+
+def _length_pref_from_pack(context_pack: str) -> str:
+    m = re.search(r"Length:\s*(\w+)", context_pack or "", re.I)
+    if m:
+        return m.group(1).strip().lower()
+    return "medium"
+
+
+TOPIC_LOCK_RULES = """
+TOPIC LOCK (mandatory for every variant):
+- The USER BRIEF topic is the subject of ALL variants. Do not pivot to an unrelated product pitch.
+- Name or clearly reference the brief topic in the first 2 lines of every caption.
+- Angles are lenses on the SAME topic:
+  - educational = teach something concrete about this topic
+  - thought_leadership = opinion / point of view on this topic
+  - product_value = how this topic creates value for the reader (brand only as a supporting lens, not a replacement topic)
+- Prefer brief-specific details before brand CTAs.
 """
 
 IMAGE_LAYOUT_SPEC = """
@@ -53,10 +89,14 @@ class AIProvider:
     def chat(self, message: str, context_pack: str, history: list[dict] | None = None) -> str:
         raise NotImplementedError
 
-    def plan_variants(self, brief: str, context_pack: str) -> list[dict]:
+    def plan_variants(
+        self, brief: str, context_pack: str, *, format: str = "image"
+    ) -> list[dict]:
         raise NotImplementedError
 
-    def critic_variants(self, brief: str, context_pack: str, plans: list[dict]) -> list[dict]:
+    def critic_variants(
+        self, brief: str, context_pack: str, plans: list[dict], *, format: str = "image"
+    ) -> list[dict]:
         """Second-pass verifier; default returns plans unchanged."""
         return plans
 
@@ -124,27 +164,72 @@ class StubProvider(AIProvider):
             "Say 'generate' to create 3 variants."
         )
 
-    def plan_variants(self, brief: str, context_pack: str) -> list[dict]:
+    def plan_variants(
+        self, brief: str, context_pack: str, *, format: str = "image"
+    ) -> list[dict]:
+        topic = (brief or "this topic").strip()
+        fmt = (format or "image").strip().lower()
+        if fmt == "carousel":
+            slides = []
+            for i in range(6):
+                slides.append(
+                    {
+                        "headline": f"Slide {i + 1}: {topic[:40]}",
+                        "body": f"Key point {i + 1} about {topic[:80]}.",
+                        "visual_prompt": (
+                            f"Clean LinkedIn carousel slide about {topic[:100]}, "
+                            "no text in image, professional"
+                        ),
+                    }
+                )
+            caption = (
+                f"{topic}\n\nHere is a practical breakdown of what matters and what to do next. "
+                "We walk through the problem, the insight, proof points, and a clear next step "
+                "for teams who want results without the fluff. Save this carousel and share it "
+                "with a teammate who owns this area.\n\n#LinkedIn #Learning"
+            )
+            return [
+                {
+                    "angle": "educational",
+                    "headline": topic[:60] or "Carousel insight",
+                    "subhead": "A practical narrative",
+                    "bullets": [],
+                    "caption": caption,
+                    "background_prompt": "",
+                    "slides": slides,
+                    "format": "carousel",
+                }
+            ]
         out = []
         for angle in ANGLES:
-            out.append(
-                {
-                    "angle": angle,
-                    "headline": "Drive measurable outcomes",
-                    "subhead": "Practical insights for buyers",
-                    "bullets": ["Clarity", "Speed", "Trust"],
-                    "caption": f"{brief[:280]}\n\n#B2B #LinkedIn",
-                    "background_prompt": (
-                        f"Abstract corporate illustration background about: {brief[:160]}. "
-                        "Soft gradients, professional, no text, no letters, no logos, no watermarks"
-                    ),
-                    "image_prompt": (
-                        f"Abstract corporate illustration background about: {brief[:160]}. "
-                        "Soft gradients, professional, no text, no letters, no logos, no watermarks"
-                    ),
-                }
+            caption = (
+                f"{topic}\n\n"
+                f"Here is an {angle.replace('_', ' ')} take on this topic: what it means, "
+                "why it matters now, and how teams can act without inventing vanity metrics. "
+                "Start with the reader pain, give one concrete insight from the brief, then "
+                "close with a specific CTA for discussion.\n\n#LinkedIn #B2B"
             )
-        return out
+            item = {
+                "angle": angle,
+                "headline": (topic[:50] or "Drive better outcomes")[:60],
+                "subhead": "Practical insights for this topic",
+                "bullets": ["Clarity", "Speed", "Trust"],
+                "caption": caption,
+                "background_prompt": (
+                    f"Abstract corporate illustration about: {topic[:160]}. "
+                    "Soft gradients, professional, no text, no letters, no logos, no watermarks"
+                ),
+                "image_prompt": (
+                    f"Abstract corporate illustration about: {topic[:160]}. "
+                    "Soft gradients, professional, no text, no letters, no logos, no watermarks"
+                ),
+                "format": fmt,
+            }
+            if fmt == "text":
+                item["background_prompt"] = ""
+                item["image_prompt"] = ""
+            out.append(item)
+        return out if fmt != "carousel" else out[:1]
 
     def generate_image(self, prompt: str) -> bytes:
         return base64.b64decode(
@@ -350,17 +435,60 @@ class OpenAIProvider(AIProvider):
         except Exception as e:
             raise AppError(f"OpenAI chat error: {e}", 502, "OPENAI_ERROR")
 
-    def plan_variants(self, brief: str, context_pack: str) -> list[dict]:
-        prompt = f"""Create exactly 3 LinkedIn post variants for this brief.
+    def plan_variants(
+        self, brief: str, context_pack: str, *, format: str = "image"
+    ) -> list[dict]:
+        fmt = (format or "image").strip().lower()
+        if fmt not in ("text", "image", "carousel"):
+            fmt = "image"
+        length_rule = caption_length_rule(_length_pref_from_pack(context_pack))
+
+        if fmt == "carousel":
+            prompt = f"""Create ONE LinkedIn carousel post plan for this brief.
+Return ONLY a valid JSON array with exactly 1 object with keys:
+angle, headline, subhead, bullets, caption, slides.
+slides must be an array of 5–8 objects with keys: headline, body, visual_prompt.
+
+Rules:
+{TOPIC_LOCK_RULES}
+- angle: educational (narrative arc on the SAME topic: hook → insight → proof → CTA).
+- caption: full LinkedIn caption for the carousel. {length_rule}
+- Each slide headline: MAX 7 words; body: 1–2 short sentences on the brief topic.
+- visual_prompt: background-only scene, no text/letters/logos.
+- Only use facts present in COMPANY CONTEXT or the user brief.
+
+USER BRIEF:
+{brief}
+"""
+        elif fmt == "text":
+            prompt = f"""Create exactly 3 LinkedIn TEXT post variants for this brief (no image creatives).
+Return ONLY a valid JSON array of 3 objects with keys:
+angle, headline, subhead, bullets, caption.
+
+Rules:
+{TOPIC_LOCK_RULES}
+- Angles must be exactly: educational, thought_leadership, product_value (one each) — lenses on the SAME topic.
+- headline: short hook for the post (MAX 12 words) — may appear as first line of caption.
+- subhead/bullets: optional supporting points (bullets MAX 4, each MAX 8 words).
+- caption: full LinkedIn text post (story, CTA, light hashtags). {length_rule}
+- Do NOT invent metrics/clients/awards not in COMPANY CONTEXT.
+- Omit background_prompt / image fields.
+
+USER BRIEF:
+{brief}
+"""
+        else:
+            prompt = f"""Create exactly 3 LinkedIn post variants for this brief.
 Return ONLY a valid JSON array of 3 objects with keys:
 angle, headline, subhead, bullets, caption, background_prompt.
 
 Rules:
-- Angles must be exactly: educational, thought_leadership, product_value (one each).
+{TOPIC_LOCK_RULES}
+- Angles must be exactly: educational, thought_leadership, product_value (one each) — lenses on the SAME topic.
 - headline: MAX 7 words, exact string that will be printed on the image by our template (not by the image model).
 - subhead: optional, MAX 12 words.
 - bullets: array of 0–4 short labels (MAX 5 words each).
-- caption: full LinkedIn caption (story, CTA, light hashtags). Do NOT invent metrics/clients/awards not in COMPANY CONTEXT.
+- caption: full LinkedIn caption (story, CTA, light hashtags). {length_rule}
 - background_prompt: visual-only FULL-BLEED scene. Put the main subject on the RIGHT 55% (person, product, device, or vivid 3D object). Left side softer for text overlay. MUST say: no text, no letters, no numbers, no logos, no watermarks, no black bars, no empty voids.
 - Only use facts present in COMPANY CONTEXT or the user brief. If a number/quote is not in context, omit it.
 
@@ -369,20 +497,42 @@ USER BRIEF:
 """
         try:
             text = self._chat_json(SYSTEM_STANCE + "\n\n" + context_pack, prompt, temperature=0.75)
-            return _parse_variants_json(text)
+            plans = _parse_variants_json(text)
+            for p in plans:
+                if isinstance(p, dict):
+                    p["format"] = fmt
+            return plans
         except AppError:
             raise
         except Exception as e:
             raise AppError(f"OpenAI plan error: {e}", 502, "OPENAI_ERROR")
 
-    def critic_variants(self, brief: str, context_pack: str, plans: list[dict]) -> list[dict]:
-        prompt = f"""You are a fact checker. Given COMPANY CONTEXT, user brief, and 3 post JSON objects,
-return ONLY a JSON array of 3 corrected objects with the same keys
-(angle, headline, subhead, bullets, caption, background_prompt).
+    def critic_variants(
+        self, brief: str, context_pack: str, plans: list[dict], *, format: str = "image"
+    ) -> list[dict]:
+        fmt = (format or "image").strip().lower()
+        length_rule = caption_length_rule(_length_pref_from_pack(context_pack))
+        keys = (
+            "angle, headline, subhead, bullets, caption, slides"
+            if fmt == "carousel"
+            else (
+                "angle, headline, subhead, bullets, caption"
+                if fmt == "text"
+                else "angle, headline, subhead, bullets, caption, background_prompt"
+            )
+        )
+        n = 1 if fmt == "carousel" else 3
+        prompt = f"""You are a fact checker and topic guardian. Given COMPANY CONTEXT, user brief, and {n} post JSON object(s),
+return ONLY a JSON array of {n} corrected object(s) with keys: {keys}.
 
-Remove or rewrite any claim (stats, clients, awards, quotes) not supported by context/brief.
-Keep headlines ≤7 words and bullets short.
-Strengthen each background_prompt so the RIGHT side has a clear subject (not empty texture) and remains free of text/letters/logos.
+Rules:
+{TOPIC_LOCK_RULES}
+- Remove or rewrite any claim (stats, clients, awards, quotes) not supported by context/brief.
+- Do NOT dilute the brief topic when removing unsupported claims; expand with on-topic explanation instead of generic B2B filler.
+- Keep captions on-topic and satisfy: {length_rule}
+- Keep headlines ≤7 words (≤12 for text format) and bullets short.
+{"- Strengthen each background_prompt so the RIGHT side has a clear subject (not empty texture) and remains free of text/letters/logos." if fmt == "image" else ""}
+{"- Keep 5–8 slides; each slide must advance the same topic narrative." if fmt == "carousel" else ""}
 
 USER BRIEF:
 {brief}
@@ -392,7 +542,11 @@ PLANS JSON:
 """
         try:
             text = self._chat_json(SYSTEM_STANCE + "\n\n" + context_pack, prompt, temperature=0.2)
-            return _parse_variants_json(text)
+            out = _parse_variants_json(text)
+            for p in out:
+                if isinstance(p, dict):
+                    p["format"] = fmt
+            return out
         except Exception:
             return plans
 
@@ -719,80 +873,127 @@ class GeminiProvider(OpenAIProvider):
         )
 
 
-class BedrockProvider(AIProvider):
-    def chat(self, message: str, context_pack: str, history: list[dict] | None = None) -> str:
-        try:
-            import boto3
+def bedrock_configured() -> bool:
+    """True when Bedrock should appear as an available text provider."""
+    flag = (os.environ.get("BEDROCK_ENABLED") or "").strip().lower()
+    if flag in ("1", "true", "yes", "on"):
+        return True
+    if (os.environ.get("AI_PROVIDER") or "").lower().strip() == "bedrock":
+        return True
+    # Local AWS keys / profile — Lambda uses IAM role instead (set BEDROCK_ENABLED=true)
+    if (os.environ.get("AWS_ACCESS_KEY_ID") or "").strip() and (
+        os.environ.get("AWS_SECRET_ACCESS_KEY") or ""
+    ).strip():
+        return True
+    if (os.environ.get("AWS_PROFILE") or "").strip():
+        return True
+    return False
 
-            client = boto3.client(
-                "bedrock-runtime",
-                region_name=os.environ.get("AWS_REGION", "us-east-1"),
+
+def _bedrock_runtime_client():
+    import boto3
+
+    region = (
+        os.environ.get("BEDROCK_REGION")
+        or os.environ.get("AWS_REGION")
+        or "us-east-1"
+    ).strip()
+    return boto3.client("bedrock-runtime", region_name=region)
+
+
+def _bedrock_extract_converse_text(resp: dict) -> str:
+    try:
+        parts = resp["output"]["message"]["content"]
+        texts = [p.get("text") or "" for p in parts if isinstance(p, dict)]
+        out = "\n".join(t for t in texts if t).strip()
+        if out:
+            return out
+    except Exception:
+        pass
+    raise AppError(
+        f"Bedrock returned empty/unreadable content: {str(resp)[:300]}",
+        502,
+        "BEDROCK_ERROR",
+    )
+
+
+class BedrockProvider(OpenAIProvider):
+    """Amazon Bedrock via Converse API — chat/plan/score/insights.
+
+    Images stay on image_providers (OpenAI, Titan, Nova Canvas, etc.).
+    Enable models in the Bedrock console (Model access) for your account/region.
+    """
+
+    def __init__(self):
+        self.api_key = ""  # unused; satisfies parent fields if referenced
+        self.model = (
+            os.environ.get("BEDROCK_MODEL")
+            or "anthropic.claude-3-5-haiku-20241022-v1:0"
+        ).strip()
+        self.image_model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+        if not bedrock_configured():
+            raise AppError(
+                "Bedrock is not configured. Set BEDROCK_ENABLED=true "
+                "(and AWS credentials or Lambda IAM), plus BEDROCK_MODEL.",
+                500,
+                "AI_CONFIG",
             )
-            model = os.environ.get("BEDROCK_MODEL", "anthropic.claude-3-haiku-20240307-v1:0")
-            body = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 1024,
-                "system": SYSTEM_STANCE + "\n\n" + context_pack,
-                "messages": [{"role": "user", "content": message}],
-            }
-            resp = client.invoke_model(modelId=model, body=json.dumps(body))
-            payload = json.loads(resp["body"].read())
-            return payload["content"][0]["text"]
-        except Exception as e:
-            raise AppError(f"Bedrock chat failed: {e}", 502, "BEDROCK_ERROR")
 
-    def plan_variants(self, brief: str, context_pack: str) -> list[dict]:
-        text = self.chat(
-            f"Return ONLY JSON array of 3 objects angle/caption/image_prompt for LinkedIn posts. Brief: {brief}",
-            context_pack,
-        )
-        return _parse_variants_json(text)
+    def _chat_json(self, system: str, user: str, temperature: float = 0.7) -> str:
+        try:
+            client = _bedrock_runtime_client()
+            resp = client.converse(
+                modelId=self.model,
+                system=[{"text": system}],
+                messages=[{"role": "user", "content": [{"text": user}]}],
+                inferenceConfig={
+                    "temperature": float(temperature),
+                    "maxTokens": 8192,
+                },
+            )
+            return _bedrock_extract_converse_text(resp)
+        except AppError:
+            raise
+        except Exception as e:
+            raise AppError(f"Bedrock error: {e}", 502, "BEDROCK_ERROR")
+
+    def chat(self, message: str, context_pack: str, history: list[dict] | None = None) -> str:
+        messages = []
+        for h in (history or [])[-12:]:
+            role = h.get("role") or "user"
+            if role not in ("user", "assistant"):
+                role = "user"
+            # Converse: assistant → assistant
+            messages.append(
+                {
+                    "role": "assistant" if role == "assistant" else "user",
+                    "content": [{"text": h.get("content") or ""}],
+                }
+            )
+        messages.append({"role": "user", "content": [{"text": message}]})
+        try:
+            client = _bedrock_runtime_client()
+            resp = client.converse(
+                modelId=self.model,
+                system=[{"text": SYSTEM_STANCE + "\n\n" + context_pack}],
+                messages=messages,
+                inferenceConfig={"temperature": 0.7, "maxTokens": 4096},
+            )
+            return _bedrock_extract_converse_text(resp)
+        except AppError:
+            raise
+        except Exception as e:
+            raise AppError(f"Bedrock chat error: {e}", 502, "BEDROCK_ERROR")
 
     def generate_image(self, prompt: str) -> bytes:
+        # Compose path uses image_providers. Fallback to OpenAI if keyed.
+        if (os.environ.get("OPENAI_API_KEY") or "").strip():
+            return OpenAIProvider.generate_image(OpenAIProvider(), prompt)
         raise AppError(
-            "Bedrock image generation is not configured. Set AI_PROVIDER=openai for images.",
+            "Bedrock text only here — pick a Bedrock/OpenAI image model in Agent "
+            "(Titan, Nova Canvas, gpt-image-1, …).",
             501,
             "NOT_IMPLEMENTED",
-        )
-
-    def content_suggestions(self, context_pack: str) -> list[dict]:
-        return StubProvider().content_suggestions(context_pack)
-
-    def industry_news_briefs(self, context_pack: str, industry: str) -> list[dict]:
-        return StubProvider().industry_news_briefs(context_pack, industry)
-
-    def analytics_advice(self, context_pack: str, metrics: dict) -> dict:
-        return StubProvider().analytics_advice(context_pack, metrics)
-
-    def score_post(
-        self,
-        *,
-        caption: str,
-        layout: dict | None,
-        angle: str,
-        context_pack: str,
-    ) -> dict:
-        return StubProvider().score_post(
-            caption=caption, layout=layout, angle=angle, context_pack=context_pack
-        )
-
-    def score_posts_batch(
-        self,
-        *,
-        posts: list[dict],
-        context_pack: str,
-    ) -> list[dict]:
-        return StubProvider().score_posts_batch(posts=posts, context_pack=context_pack)
-
-    def ab_schedule_suggestions(
-        self,
-        *,
-        posts: list[dict],
-        context_pack: str,
-        best_times: list[str] | None = None,
-    ) -> dict:
-        return StubProvider().ab_schedule_suggestions(
-            posts=posts, context_pack=context_pack, best_times=best_times
         )
 
 
@@ -965,6 +1166,7 @@ def list_text_providers() -> list[dict]:
     """Providers available for chat / plan / score (images stay separate)."""
     openai_ok = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
     gemini_ok = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+    bedrock_ok = bedrock_configured()
     default = (os.environ.get("AI_PROVIDER") or "openai").lower().strip()
     return [
         {
@@ -983,9 +1185,11 @@ def list_text_providers() -> list[dict]:
         },
         {
             "id": "bedrock",
-            "label": "AWS Bedrock",
-            "model": os.environ.get("BEDROCK_MODEL", "anthropic.claude-3-haiku-20240307-v1:0"),
-            "available": False,  # needs AWS creds; enable when configured
+            "label": "Amazon Bedrock",
+            "model": os.environ.get(
+                "BEDROCK_MODEL", "anthropic.claude-3-5-haiku-20241022-v1:0"
+            ),
+            "available": bedrock_ok,
             "default": default == "bedrock",
         },
         {
@@ -1008,6 +1212,7 @@ def get_provider(name: str | None = None) -> AIProvider:
             "provider": resolved,
             "openai_key_present": openai_key,
             "gemini_key_present": gemini_key,
+            "bedrock_configured": bedrock_configured(),
         },
     )
     if resolved == "stub":

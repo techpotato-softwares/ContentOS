@@ -204,6 +204,8 @@ def _post_dict(p: ContentPost) -> dict:
         "headline": (layout or {}).get("headline"),
         "subhead": (layout or {}).get("subhead"),
         "bullets": (layout or {}).get("bullets"),
+        "slides": (layout or {}).get("slides"),
+        "format": (layout or {}).get("format") or ("text" if not p.image_url else "image"),
         "score": score,
         "sourceType": getattr(p, "source_type", None),
         "sourceRef": getattr(p, "source_ref", None),
@@ -392,10 +394,16 @@ class AgentController:
         news = (data.get("newsContext") or "").strip()
         if news:
             brief = f"{brief}\n\nINDUSTRY / NEWS CONTEXT TO WEAVE IN:\n{news}"
+        post_format = (data.get("format") or "image").strip().lower()
+        if post_format not in ("text", "image", "carousel"):
+            post_format = "image"
         preset = data.get("preset") or DEFAULT_PRESET
         if preset not in LINKEDIN_PRESETS:
             preset = DEFAULT_PRESET
         width, height = LINKEDIN_PRESETS[preset]
+        # Carousel slides work better as square
+        if post_format == "carousel":
+            width, height = LINKEDIN_PRESETS.get("linkedin_square", (1080, 1080))
         render_mode = (data.get("renderMode") or "template").strip().lower()
         if render_mode not in ("template", "native_text"):
             render_mode = "template"
@@ -423,18 +431,26 @@ class AgentController:
             session_id = cs.session_id
 
             training = parse_training(tenant.training_json)
+            length_pref = training.messaging.linkedin_post_length_preference or "medium"
             pack = _load_context_pack(session, tenant)
             provider = get_provider(ai_name)
-            raw_plans = provider.plan_variants(brief, pack)
-            raw_plans = provider.critic_variants(brief, pack, raw_plans)
-            plans = parse_variant_plans(raw_plans)
+            raw_plans = provider.plan_variants(brief, pack, format=post_format)
+            raw_plans = provider.critic_variants(brief, pack, raw_plans, format=post_format)
+            plans = parse_variant_plans(
+                raw_plans, format=post_format, brief=brief, length_pref=length_pref
+            )
             banned = training.messaging.banned_claims or []
             plans = [apply_banned_claims(p, banned) for p in plans]
 
             brand = _brand_dict(tenant)
             brand_lines = _brand_lines(tenant)
-            img_provider = get_image_provider(image_model)
-            gen_size = nearest_gen_size(width, height, getattr(img_provider, "model_id", "gpt-image-1"))
+            img_provider = None
+            gen_size = None
+            if post_format in ("image", "carousel"):
+                img_provider = get_image_provider(image_model)
+                gen_size = nearest_gen_size(
+                    width, height, getattr(img_provider, "model_id", "gpt-image-1")
+                )
 
             batch = GenerationBatch(
                 tenant_id=tid,
@@ -450,64 +466,148 @@ class AgentController:
             posts = []
             for plan in plans:
                 layout = plan.to_layout_dict()
-                bg_prompt = enrich_background_prompt(plan.background_prompt, brand)
-                if render_mode == "native_text":
-                    # Experimental: ask model to render text (spelling not guaranteed)
-                    native_prompt = enrich_image_prompt(
-                        (
-                            f"LinkedIn graphic. Headline text exactly: '{plan.headline}'. "
-                            f"Subhead: '{plan.subhead}'. Bullets: {', '.join(plan.bullets)}. "
-                            f"{bg_prompt}"
-                        ),
-                        brand_lines,
-                    )
-                    img = img_provider.generate_background(native_prompt, gen_size)
-                    try:
-                        from PIL import Image
-                        import io
+                uploaded = {"s3Key": None, "imageUrl": None}
+                bg_prompt = plan.background_prompt or ""
 
-                        im = Image.open(io.BytesIO(img)).convert("RGB")
-                        im = im.resize((width, height), Image.Resampling.LANCZOS)
-                        buf = io.BytesIO()
-                        im.save(buf, format="PNG")
-                        final_bytes = buf.getvalue()
-                    except Exception:
-                        final_bytes = img
-                else:
-                    bg = img_provider.generate_background(bg_prompt, gen_size)
-                    # Retry once if right side looks empty / void
-                    if background_looks_empty(bg):
-                        retry_prompt = (
-                            bg_prompt
-                            + "\nRETRY: Previous frame was empty. Fill the RIGHT half with a clear "
-                            "photoreal subject (person using technology OR premium product shot). "
-                            "No blank parchment, no black void."
-                        )
-                        bg = img_provider.generate_background(retry_prompt, gen_size)
-                    final_bytes = compose_linkedin_post(
-                        bg,
-                        layout,
-                        width=width,
-                        height=height,
-                        brand=brand,
+                if post_format == "text":
+                    layout["format"] = "text"
+                    post = ContentPost(
                         tenant_id=tid,
+                        batch_id=batch.batch_id,
+                        user_id=user["userId"],
+                        angle=plan.angle,
+                        caption=plan.caption,
+                        image_prompt="",
+                        layout_json=json.dumps(layout),
+                        image_s3_key=None,
+                        image_url=None,
+                        status="draft",
+                        source_type=source_type,
+                        source_ref=source_ref,
                     )
+                elif post_format == "carousel":
+                    slide_layouts = []
+                    cover_url = None
+                    for slide in plan.slides[:8]:
+                        slide_layout = {
+                            "angle": plan.angle,
+                            "headline": slide.headline,
+                            "subhead": (slide.body or "")[:120],
+                            "bullets": [],
+                            "caption": plan.caption,
+                            "background_prompt": slide.visual_prompt or plan.background_prompt,
+                        }
+                        s_bg = enrich_background_prompt(
+                            slide.visual_prompt or "Clean corporate gradient, no text",
+                            brand,
+                        )
+                        bg = img_provider.generate_background(s_bg, gen_size)
+                        if background_looks_empty(bg):
+                            bg = img_provider.generate_background(
+                                s_bg + "\nFill with a clear subject on the right. No empty void.",
+                                gen_size,
+                            )
+                        slide_bytes = compose_linkedin_post(
+                            bg,
+                            slide_layout,
+                            width=width,
+                            height=height,
+                            brand=brand,
+                            tenant_id=tid,
+                        )
+                        s_up = upload_tenant_image(tid, slide_bytes)
+                        slide_layouts.append(
+                            {
+                                "headline": slide.headline,
+                                "body": slide.body,
+                                "visual_prompt": slide.visual_prompt,
+                                "imageUrl": s_up["imageUrl"],
+                            }
+                        )
+                        if not cover_url:
+                            cover_url = s_up["imageUrl"]
+                            uploaded = s_up
+                    layout = {
+                        "format": "carousel",
+                        "angle": plan.angle,
+                        "headline": plan.headline,
+                        "subhead": plan.subhead,
+                        "bullets": plan.bullets,
+                        "caption": plan.caption,
+                        "slides": slide_layouts,
+                    }
+                    post = ContentPost(
+                        tenant_id=tid,
+                        batch_id=batch.batch_id,
+                        user_id=user["userId"],
+                        angle=plan.angle,
+                        caption=plan.caption,
+                        image_prompt=bg_prompt,
+                        layout_json=json.dumps(layout),
+                        image_s3_key=uploaded.get("s3Key"),
+                        image_url=cover_url,
+                        status="draft",
+                        source_type=source_type,
+                        source_ref=source_ref,
+                    )
+                else:
+                    bg_prompt = enrich_background_prompt(plan.background_prompt, brand)
+                    if render_mode == "native_text":
+                        native_prompt = enrich_image_prompt(
+                            (
+                                f"LinkedIn graphic. Headline text exactly: '{plan.headline}'. "
+                                f"Subhead: '{plan.subhead}'. Bullets: {', '.join(plan.bullets)}. "
+                                f"{bg_prompt}"
+                            ),
+                            brand_lines,
+                        )
+                        img = img_provider.generate_background(native_prompt, gen_size)
+                        try:
+                            from PIL import Image
+                            import io
 
-                uploaded = upload_tenant_image(tid, final_bytes)
-                post = ContentPost(
-                    tenant_id=tid,
-                    batch_id=batch.batch_id,
-                    user_id=user["userId"],
-                    angle=plan.angle,
-                    caption=plan.caption,
-                    image_prompt=bg_prompt,
-                    layout_json=json.dumps(layout),
-                    image_s3_key=uploaded["s3Key"],
-                    image_url=uploaded["imageUrl"],
-                    status="draft",
-                    source_type=source_type,
-                    source_ref=source_ref,
-                )
+                            im = Image.open(io.BytesIO(img)).convert("RGB")
+                            im = im.resize((width, height), Image.Resampling.LANCZOS)
+                            buf = io.BytesIO()
+                            im.save(buf, format="PNG")
+                            final_bytes = buf.getvalue()
+                        except Exception:
+                            final_bytes = img
+                    else:
+                        bg = img_provider.generate_background(bg_prompt, gen_size)
+                        if background_looks_empty(bg):
+                            retry_prompt = (
+                                bg_prompt
+                                + "\nRETRY: Previous frame was empty. Fill the RIGHT half with a clear "
+                                "photoreal subject (person using technology OR premium product shot). "
+                                "No blank parchment, no black void."
+                            )
+                            bg = img_provider.generate_background(retry_prompt, gen_size)
+                        final_bytes = compose_linkedin_post(
+                            bg,
+                            layout,
+                            width=width,
+                            height=height,
+                            brand=brand,
+                            tenant_id=tid,
+                        )
+
+                    uploaded = upload_tenant_image(tid, final_bytes)
+                    layout["format"] = "image"
+                    post = ContentPost(
+                        tenant_id=tid,
+                        batch_id=batch.batch_id,
+                        user_id=user["userId"],
+                        angle=plan.angle,
+                        caption=plan.caption,
+                        image_prompt=bg_prompt,
+                        layout_json=json.dumps(layout),
+                        image_s3_key=uploaded["s3Key"],
+                        image_url=uploaded["imageUrl"],
+                        status="draft",
+                        source_type=source_type,
+                        source_ref=source_ref,
+                    )
                 session.add(post)
                 posts.append(post)
 
@@ -545,7 +645,8 @@ class AgentController:
                     tenant_id=tid,
                     role="assistant",
                     content=(
-                        f"Generated {len(posts)} variants {src_label} "
+                        f"Generated {len(posts)} {post_format} "
+                        f"{'post' if len(posts) == 1 else 'variants'} {src_label} "
                         f"(batch #{batch.batch_id}, {render_mode}/{preset})."
                     ).strip(),
                 )
@@ -561,7 +662,7 @@ class AgentController:
                 action="agent.generate",
                 resource_type="generation_batch",
                 resource_id=str(batch.batch_id),
-                detail=brief[:500],
+                detail=json.dumps({"brief": brief[:400], "format": post_format}),
             )
             session.commit()
             for p in posts:
@@ -573,8 +674,11 @@ class AgentController:
                     "posts": [_post_dict(p) for p in posts],
                     "angles": list(ANGLES),
                     "preset": preset,
+                    "format": post_format,
                     "renderMode": render_mode,
-                    "imageModel": getattr(img_provider, "model_id", image_model),
+                    "imageModel": getattr(img_provider, "model_id", image_model)
+                    if img_provider
+                    else None,
                     "sourceType": source_type,
                     "aiProvider": ai_name or os_provider(),
                 },
@@ -753,7 +857,8 @@ class AgentController:
         url = (data.get("url") or "").strip()
         pdf_b64 = data.get("pdfBase64") or data.get("pdf_base64")
         filename = data.get("filename") or "upload.pdf"
-        generate_now = bool(data.get("generate", True))
+        # Default extract-only so clients can stage attachments; pass generate:true to run now
+        generate_now = bool(data.get("generate", False))
 
         from modules.agent.src.extract import extract_from_url, extract_from_pdf_base64
 
@@ -768,15 +873,22 @@ class AgentController:
             return create_success_response({"extracted": extracted, "posts": []})
 
         # Persist under chat history (create session if needed via generate)
+        user_context = (data.get("userContext") or data.get("message") or "").strip()
         user_note = (
             f"Repurpose: {extracted['sourceRef']}"
             if extracted["sourceType"] == "url"
             else f"Repurpose PDF: {extracted.get('title') or filename}"
         )
+        if user_context:
+            user_note = f"{user_note}\n\n{user_context}"
+        brief = extracted["brief"]
+        if user_context:
+            brief = f"{user_context}\n\nSOURCE MATERIAL:\n{extracted['brief']}"
         gen_payload = {
-            "brief": extracted["brief"],
+            "brief": brief,
             "sessionId": data.get("sessionId"),
             "preset": data.get("preset"),
+            "format": data.get("format") or "image",
             "renderMode": data.get("renderMode"),
             "imageModel": data.get("imageModel"),
             "aiProvider": data.get("aiProvider") or data.get("textProvider"),

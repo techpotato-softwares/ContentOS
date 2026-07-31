@@ -33,11 +33,24 @@ export type ContentPost = {
   headline?: string
   subhead?: string
   bullets?: string[]
+  format?: "text" | "image" | "carousel" | string
+  slides?: Array<{
+    headline?: string
+    body?: string
+    imageUrl?: string
+    visual_prompt?: string
+  }>
   layout?: {
+    format?: string
     headline?: string
     subhead?: string
     bullets?: string[]
     caption?: string
+    slides?: Array<{
+      headline?: string
+      body?: string
+      imageUrl?: string
+    }>
   }
   score?: PostScore
   sourceType?: string
@@ -45,6 +58,32 @@ export type ContentPost = {
   abLabel?: string
   scheduledAt?: string | null
   publishedAt?: string | null
+}
+
+export type LinkedInAccountStatus = {
+  connected: boolean
+  pendingSelection?: boolean
+  username?: string
+  platformUserId?: string
+  authorUrn?: string
+  expiresAt?: string | null
+  metadata?: Record<string, string | undefined>
+}
+
+export type LinkedInStatus = {
+  connected: boolean
+  username?: string
+  expiresAt?: string | null
+  member: LinkedInAccountStatus
+  organization: LinkedInAccountStatus
+}
+
+export type LinkedInOrganization = {
+  organizationId: string
+  organizationUrn: string
+  name: string
+  vanityName?: string | null
+  role?: string
 }
 
 export type PostScore = {
@@ -296,6 +335,7 @@ export const contentApi = createApi({
         sessionId?: number
         posts: ContentPost[]
         preset?: string
+        format?: string
         renderMode?: string
         imageModel?: string
         sourceType?: string
@@ -306,6 +346,7 @@ export const contentApi = createApi({
         sessionId?: number
         newsContext?: string
         preset?: string
+        format?: "text" | "image" | "carousel"
         renderMode?: string
         imageModel?: string
         aiProvider?: string
@@ -338,6 +379,8 @@ export const contentApi = createApi({
         pdfBase64?: string
         filename?: string
         generate?: boolean
+        userContext?: string
+        format?: "text" | "image" | "carousel"
         sessionId?: number
         preset?: string
         renderMode?: string
@@ -421,19 +464,84 @@ export const contentApi = createApi({
       transformResponse: (r: unknown) => unwrapData(r),
       invalidatesTags: ["Posts"],
     }),
-    publishPost: build.mutation<ContentPost, number>({
-      query: (id) => ({ url: `/api/posts/${id}/publish`, method: "POST" }),
+    publishPost: build.mutation<
+      ContentPost,
+      number | { id: number; publishAs?: "member" | "organization" }
+    >({
+      query: (arg) => {
+        const id = typeof arg === "number" ? arg : arg.id
+        const body =
+          typeof arg === "number" ? {} : { publishAs: arg.publishAs }
+        return { url: `/api/posts/${id}/publish`, method: "POST", body }
+      },
       transformResponse: (r: unknown) => unwrapData(r),
       invalidatesTags: ["Posts"],
     }),
-    linkedInStatus: build.query<{ connected: boolean; username?: string }, void>({
-      query: () => "/api/social/linkedin/status",
+    linkedInStatus: build.query<LinkedInStatus, { tenantId?: number } | void>({
+      query: (arg) => {
+        const tid = arg && typeof arg === "object" ? arg.tenantId : undefined
+        return tid
+          ? `/api/social/linkedin/status?tenantId=${tid}`
+          : "/api/social/linkedin/status"
+      },
       transformResponse: (r: unknown) => unwrapData(r),
       providesTags: ["LinkedIn"],
     }),
-    linkedInConnect: build.mutation<{ authorizeUrl: string }, void>({
-      query: () => ({ url: "/api/social/linkedin/connect", method: "GET" }),
+    linkedInConnect: build.mutation<
+      { authorizeUrl: string; mode: string },
+      { mode?: "member" | "organization"; tenantId?: number }
+    >({
+      query: (arg) => {
+        const params = new URLSearchParams()
+        params.set("mode", arg?.mode || "member")
+        if (arg?.tenantId) params.set("tenantId", String(arg.tenantId))
+        return {
+          url: `/api/social/linkedin/connect?${params.toString()}`,
+          method: "GET",
+        }
+      },
       transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    linkedInOrganizations: build.query<
+      { organizations: LinkedInOrganization[] },
+      { tenantId?: number } | void
+    >({
+      query: (arg) => {
+        const tid = arg && typeof arg === "object" ? arg.tenantId : undefined
+        return tid
+          ? `/api/social/linkedin/organizations?tenantId=${tid}`
+          : "/api/social/linkedin/organizations"
+      },
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    linkedInSelectOrganization: build.mutation<
+      LinkedInAccountStatus,
+      {
+        organizationId: string
+        name?: string
+        vanityName?: string
+        tenantId?: number
+      }
+    >({
+      query: (body) => ({
+        url: "/api/social/linkedin/organizations/select",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["LinkedIn"],
+    }),
+    linkedInDisconnect: build.mutation<
+      { disconnected: boolean; accountKind: string },
+      { accountKind: "member" | "organization"; tenantId?: number }
+    >({
+      query: (body) => ({
+        url: "/api/social/linkedin/disconnect",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["LinkedIn"],
     }),
   }),
 })
@@ -469,4 +577,7 @@ export const {
   usePublishPostMutation,
   useLinkedInStatusQuery,
   useLinkedInConnectMutation,
+  useLazyLinkedInOrganizationsQuery,
+  useLinkedInSelectOrganizationMutation,
+  useLinkedInDisconnectMutation,
 } = contentApi

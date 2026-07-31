@@ -35,28 +35,41 @@ def handler(event, context):
                 from modules.publishing.src.controllers.publishing_controller import (
                     _load_tokens,
                     _linkedin_ugc_publish,
+                    _linkedin_document_publish,
+                    _pick_publish_account,
+                    _ensure_social_account_columns,
                 )
 
-                acct = session.exec(
-                    select(SocialAccount).where(
-                        SocialAccount.tenant_id == post.tenant_id,
-                        SocialAccount.platform == "linkedin",
-                        SocialAccount.is_active == True,  # noqa: E712
-                    )
-                ).first()
+                _ensure_social_account_columns()
+                acct, kind = _pick_publish_account(session, post.tenant_id, None)
                 linkedin_id = None
-                if acct and acct.token_payload_encrypted:
+                layout = None
+                if post.layout_json:
+                    try:
+                        layout = json.loads(post.layout_json)
+                    except Exception:
+                        layout = None
+                fmt = (layout or {}).get("format") or ("text" if not post.image_url else "image")
+
+                if acct and acct.token_payload_encrypted and acct.author_urn:
                     tokens = _load_tokens(acct)
                     access = tokens.get("access_token")
-                    person_urn = (
-                        f"urn:li:person:{acct.platform_user_id}"
-                        if acct.platform_user_id
-                        else None
-                    )
-                    cfg_ok = bool(os.environ.get("LINKEDIN_CLIENT_ID") and access and person_urn)
-                    if cfg_ok and not (post.image_url or "").startswith("data:"):
+                    author_urn = acct.author_urn
+                    cfg_ok = bool(os.environ.get("LINKEDIN_CLIENT_ID") and access and author_urn)
+                    if fmt == "carousel" and cfg_ok:
+                        slides = (layout or {}).get("slides") or []
+                        slide_urls = [
+                            s.get("imageUrl")
+                            for s in slides
+                            if isinstance(s, dict) and s.get("imageUrl")
+                        ]
+                        if slide_urls:
+                            linkedin_id = _linkedin_document_publish(
+                                access, author_urn, post.caption, slide_urls
+                            )
+                    elif cfg_ok:
                         linkedin_id = _linkedin_ugc_publish(
-                            access, person_urn, post.caption, post.image_url
+                            access, author_urn, post.caption, None
                         )
                 if not linkedin_id:
                     linkedin_id = f"stub-li-{post.post_id}-{int(now.timestamp())}"
@@ -73,7 +86,7 @@ def handler(event, context):
                     action="posts.scheduled_publish",
                     resource_type="content_post",
                     resource_id=str(post.post_id),
-                    detail=linkedin_id,
+                    detail=json.dumps({"linkedinId": linkedin_id, "publishAs": kind, "format": fmt}),
                 )
                 published.append(post.post_id)
                 logger.info("scheduled publish ok", {"postId": post.post_id})

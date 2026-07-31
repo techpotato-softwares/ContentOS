@@ -11,11 +11,11 @@ The goal: automate LinkedIn content creation so companies spend less time resear
 | Area | Capability |
 |------|------------|
 | **Company training** | Structured brand/domain schema (colors, voice, offerings, contact) injected into generation |
-| **Agent chat** | Open briefs → conversation + **3 post variants** (caption + landscape image) |
-| **Chat history** | Persisted sessions you can reopen |
+| **Agent chat** | Open briefs → conversation + variants (**text**, **image**, or **carousel**) |
+| **Chat history** | Persisted sessions you can reopen; PDF/URL attach as draft then Send with context |
 | **Insights** | Domain content suggestions + industry briefings as generation context |
 | **Analytics** | Placeholder LinkedIn metrics + AI tips on what/when to publish |
-| **Review & publish** | Manual approve/reject gate, then LinkedIn publish (OAuth) |
+| **Review & publish** | Manual approve/reject gate, then LinkedIn publish (personal or company page) |
 | **Multi-tenant** | Platform theme by default; white-label when tenant logo + colors are complete |
 | **Roles** | `super_admin` · `tenant_admin` · `tenant_member` |
 
@@ -63,7 +63,7 @@ ContentOS/
 | **Python** | ≥ 3.9 (`python3`) |
 | **Postgres** | Supabase project (local & QA). Set `DB_SSL=true`. Prod uses RDS via CDK. |
 | **OpenAI API key** | Required for real chat + image generation (`AI_PROVIDER=openai`) |
-| **LinkedIn app** (optional) | Client ID/secret for live connect & publish |
+| **LinkedIn app** (optional) | Client ID/secret for live connect & publish. Member posting needs Share on LinkedIn + OpenID. **Company pages** need Community Management API (`w_organization_social`, `r_organization_admin`). |
 
 ---
 
@@ -144,10 +144,21 @@ Change these passwords before any shared or production use.
 
 1. **Training** — fill company industry/domain, brand colors, website/phone/email  
 2. **Insights** — suggestions & industry briefings → “Generate from this”  
-3. **Agent** — chat or generate 3 variants; use history sidebar; View / Download images  
-4. **Review** — approve drafts  
-5. **LinkedIn** — connect OAuth when credentials exist, then publish  
+3. **Agent** — choose format (text / image / carousel); attach PDF or URL as a draft chip, add context, then Send; or Generate for briefs  
+4. **Review** — approve drafts; pick personal vs company page when both are connected  
+5. **LinkedIn** — connect personal profile and/or company page (admin), then publish  
 6. **Analytics** — placeholder metrics + AI publish guidance  
+
+### LinkedIn OAuth setup
+
+1. Create an app at [LinkedIn Developers](https://www.linkedin.com/developers/).
+2. Enable **Sign In with LinkedIn using OpenID Connect** and **Share on LinkedIn** (member posts).
+3. For company pages: apply for **Community Management API**, then use scopes including `w_organization_social` and `r_organization_admin`.
+4. Authorized redirect URL must match `LINKEDIN_REDIRECT_URI` (default `http://localhost:4001/api/social/linkedin/callback`).
+5. Set `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REDIRECT_URI`, `LINKEDIN_FRONTEND_REDIRECT` in `apps/api/.env`.
+6. In the app: **LinkedIn** → Connect personal (any publisher) and/or Connect company page (tenant admin) → pick the page after OAuth.
+
+**Post formats:** text captions publish via UGC; carousels are composed as multi-slide images and published as a LinkedIn document when document APIs are available.
 
 ### 7. Read next (optional)
 
@@ -269,7 +280,10 @@ See [`infra/README.md`](infra/README.md) for Lambda names and DB wiring.
 | Images 404 in UI | Ensure API is up; Vite proxies `/media`. Restart `dev:web` after proxy changes |
 | Generate 502 / OpenAI errors | Check key, image model, size, and org rate limits |
 | Theme 401 loops | Refresh token expired — log in again |
-| LinkedIn publish fails | Connect LinkedIn first; set client ID/secret and redirect URIs |
+| LinkedIn publish fails | Connect personal or company page; set client ID/secret and redirect URIs; company pages need Community Management API approval |
+| Company page list empty | Admin must complete org OAuth; member needs ADMIN/CONTENT_ADMIN role on the page |
+| Carousel publish error | Document upload requires Community Management; generate/preview still works |
+| PDF generates immediately | Attach PDF stages a draft — add context and press Send (not auto-generate) |
 
 ---
 

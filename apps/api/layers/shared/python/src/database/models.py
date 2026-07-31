@@ -144,12 +144,22 @@ class ContentPost(SQLModel, table=True):
 
 class SocialAccount(SQLModel, table=True):
     __tablename__ = "social_accounts"
-    __table_args__ = (UniqueConstraint("tenant_id", "platform", name="uq_tenant_platform"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "platform", "account_kind", name="uq_tenant_platform_kind"
+        ),
+    )
     account_id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
     platform: str = "linkedin"
+    # member = personal profile; organization = Company Page
+    account_kind: str = Field(default="member", index=True)
     platform_user_id: Optional[str] = None
     username: Optional[str] = None
+    # Canonical LinkedIn author URN for publish (person or organization)
+    author_urn: Optional[str] = None
+    # Org vanity, pendingSelection, connectedBy, slide metadata, etc.
+    metadata_json: Optional[str] = Field(default=None, sa_column=Column(Text))
     token_secret_arn: Optional[str] = None
     # Local/dev may store encrypted blob reference; never return raw tokens in API
     token_payload_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text))
