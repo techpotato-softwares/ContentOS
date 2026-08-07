@@ -13,6 +13,7 @@ LAYER_BUNDLED = API_ROOT / "layers" / "shared" / "python" / "bundled"
 MANIFEST_PATH = API_ROOT / "app-manifest.json"
 ENV_LOCAL_JSON = CDK_ROOT / "env.local.json"
 UI_BUILD_PATH = REPO_ROOT / "apps" / "web" / "dist"
+MARKETING_PATH = REPO_ROOT / "apps" / "marketing"
 
 API_ASSET_EXCLUDES = [
     ".venv",

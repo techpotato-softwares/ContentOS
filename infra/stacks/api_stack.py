@@ -22,9 +22,10 @@ from cdk_constructs.permissions.lambda_permissions import (
     IPermissionProvider,
     LambdaPermissions,
 )
+from cdk_constructs.security.db_secrets_construct import DbSecretsConstruct
 from cdk_constructs.security.jwt_secrets_construct import JwtSecretsConstruct
 from cdk_constructs.storage.s3_construct import S3Construct
-from paths import LAYER_BUNDLED, UI_BUILD_PATH
+from paths import LAYER_BUNDLED, MARKETING_PATH, UI_BUILD_PATH
 from utils.manifest_reader import read_manifest
 
 
@@ -70,6 +71,14 @@ class ApiStack(Stack):
             else None
         )
 
+        db_secrets: DbSecretsConstruct | None = None
+        if not config.features.rds:
+            print("\n🔐 Creating DB secret placeholder (Supabase)...")
+            db_secrets = DbSecretsConstruct(
+                self, "DbSecretsConstruct", config=config
+            )
+            permission_providers.append(db_secrets)
+
         print("\n📦 Creating shared Python Lambda layer...")
         shared_layer = lambda_.LayerVersion(
             self,
@@ -113,6 +122,7 @@ class ApiStack(Stack):
                 "StaticSiteConstruct",
                 config=config,
                 ui_build_path=str(UI_BUILD_PATH),
+                marketing_path=str(MARKETING_PATH),
             )
             cloudfront_url = (
                 f"https://{static_site.distribution.distribution_domain_name}"

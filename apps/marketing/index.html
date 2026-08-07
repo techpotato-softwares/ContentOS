@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ContentOS — LinkedIn content operating system</title>
+    <meta
+      name="description"
+      content="ContentOS helps B2B teams plan, generate, and publish LinkedIn image content."
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #0f172a;
+        --muted: #475569;
+        --accent: #0d9488;
+        --bg1: #ecfeff;
+        --bg2: #f8fafc;
+        --card: rgba(255, 255, 255, 0.72);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #a5f3fc 0%, transparent 55%),
+          radial-gradient(900px 500px at 100% 0%, #99f6e4 0%, transparent 50%),
+          linear-gradient(180deg, var(--bg1), var(--bg2));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
+      main {
+        width: min(640px, 100%);
+        background: var(--card);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 1.5rem;
+        padding: 2.5rem;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+      }
+      .brand {
+        font-size: 0.85rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 700;
+        margin-bottom: 1rem;
+      }
+      h1 {
+        font-size: clamp(2rem, 5vw, 2.75rem);
+        line-height: 1.1;
+        margin: 0 0 1rem;
+        font-weight: 700;
+      }
+      p {
+        margin: 0 0 1.75rem;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        border-radius: 999px;
+        padding: 0.8rem 1.35rem;
+        font-weight: 600;
+      }
+      .primary {
+        background: var(--ink);
+        color: #fff;
+      }
+      .primary:hover {
+        background: #1e293b;
+      }
+      .ghost {
+        color: var(--ink);
+        border: 1px solid rgba(15, 23, 42, 0.15);
+        background: transparent;
+      }
+      .note {
+        margin-top: 1.75rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">ContentOS</div>
+      <h1>LinkedIn content, operating as a system.</h1>
+      <p>
+        Plan, generate, review, and publish B2B image posts — with training,
+        tenant branding, and an agent workspace. Marketing site pages are still
+        in development; the product is live under
+        <strong>/app</strong>.
+      </p>
+      <div class="actions">
+        <a class="primary" href="/app/">Open application</a>
+        <a class="ghost" href="/app/login">Sign in</a>
+      </div>
+      <p class="note">Marketing website — coming soon.</p>
+    </main>
+  </body>
+</html>

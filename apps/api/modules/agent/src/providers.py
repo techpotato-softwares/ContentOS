@@ -55,6 +55,21 @@ TOPIC LOCK (mandatory for every variant):
 - Prefer brief-specific details before brand CTAs.
 """
 
+RESEARCH_TEXT_RULES = """
+RESEARCH / NATIVE TEXT POST structure (LinkedIn feed — text-first, not an image graphic):
+1) Hook (1–2 short lines) — curiosity or sharp claim about the USER BRIEF topic.
+2) Context (2–4 lines) — why this matters now for the ICP.
+3) Research / insight body — 3–5 short paragraphs OR numbered takeaways grounded in the brief + COMPANY CONTEXT.
+   Use line breaks liberally (LinkedIn scannability). Prefer concrete mechanisms over buzzwords.
+4) Practical takeaway — one clear action the reader can take this week.
+5) Soft CTA — invite comments / experiences (not a hard sales pitch).
+6) Hashtags — end with 3–6 relevant hashtags on their own lines or a final line
+   (mix of niche + 1–2 broader tags). Example shape: #TopicKeyword #Industry #B2B
+- Do NOT invent studies, % metrics, client names, or awards not in COMPANY CONTEXT / brief.
+- If research depth is thin, say what is known qualitatively — never fabricate citations.
+- Caption is the FULL post body (this is what gets published to LinkedIn).
+"""
+
 IMAGE_LAYOUT_SPEC = """
 LinkedIn image creative — CRITICAL layout & typography rules:
 - Canvas: landscape 16:9 / ~1.91:1 (LinkedIn feed). Full composition must fit inside the frame.
@@ -202,18 +217,22 @@ class StubProvider(AIProvider):
             ]
         out = []
         for angle in ANGLES:
+            tag = "".join(w.capitalize() for w in topic.split()[:3] if w.isalpha()) or "Insight"
             caption = (
                 f"{topic}\n\n"
-                f"Here is an {angle.replace('_', ' ')} take on this topic: what it means, "
-                "why it matters now, and how teams can act without inventing vanity metrics. "
-                "Start with the reader pain, give one concrete insight from the brief, then "
-                "close with a specific CTA for discussion.\n\n#LinkedIn #B2B"
+                f"Most teams talk about this — few dig into what actually moves the needle.\n\n"
+                f"Here's an {angle.replace('_', ' ')} research take:\n\n"
+                f"1) The real constraint is rarely the tool — it's the operating rhythm around {topic[:60]}.\n"
+                f"2) Leaders who win treat this as a system: diagnose → pilot → measure → scale.\n"
+                f"3) The practical move this week: pick one bottleneck tied to this topic and run a 7-day experiment.\n\n"
+                f"What are you seeing in your world? Drop a comment — specific stories help everyone learn faster.\n\n"
+                f"#{tag} #LinkedIn #B2B #Leadership #Growth"
             )
             item = {
                 "angle": angle,
                 "headline": (topic[:50] or "Drive better outcomes")[:60],
-                "subhead": "Practical insights for this topic",
-                "bullets": ["Clarity", "Speed", "Trust"],
+                "subhead": "Research-style LinkedIn text post",
+                "bullets": ["Hook", "Insight", "Action"],
                 "caption": caption,
                 "background_prompt": (
                     f"Abstract corporate illustration about: {topic[:160]}. "
@@ -224,10 +243,14 @@ class StubProvider(AIProvider):
                     "Soft gradients, professional, no text, no letters, no logos, no watermarks"
                 ),
                 "format": fmt,
+                "hashtags": [f"#{tag}", "#LinkedIn", "#B2B", "#Leadership", "#Growth"],
             }
             if fmt == "text":
-                item["background_prompt"] = ""
-                item["image_prompt"] = ""
+                item["background_prompt"] = (
+                    f"Editorial LinkedIn supporting photo vibe about {topic[:100]}, "
+                    "cinematic, no text, no letters, no logos"
+                )
+                item["image_prompt"] = item["background_prompt"]
             out.append(item)
         return out if fmt != "carousel" else out[:1]
 
@@ -461,18 +484,23 @@ USER BRIEF:
 {brief}
 """
         elif fmt == "text":
-            prompt = f"""Create exactly 3 LinkedIn TEXT post variants for this brief (no image creatives).
+            prompt = f"""Create exactly 3 LinkedIn RESEARCH / native TEXT posts for this brief.
+These are feed posts meant to be published as text (optionally with a supporting photo later) — NOT image-graphic creatives.
+
 Return ONLY a valid JSON array of 3 objects with keys:
-angle, headline, subhead, bullets, caption.
+angle, headline, subhead, bullets, caption, hashtags, background_prompt.
 
 Rules:
 {TOPIC_LOCK_RULES}
+{RESEARCH_TEXT_RULES}
 - Angles must be exactly: educational, thought_leadership, product_value (one each) — lenses on the SAME topic.
-- headline: short hook for the post (MAX 12 words) — may appear as first line of caption.
-- subhead/bullets: optional supporting points (bullets MAX 4, each MAX 8 words).
-- caption: full LinkedIn text post (story, CTA, light hashtags). {length_rule}
-- Do NOT invent metrics/clients/awards not in COMPANY CONTEXT.
-- Omit background_prompt / image fields.
+- headline: short hook (MAX 12 words) — usually mirrors the first line of the caption.
+- subhead: optional 1-line thesis.
+- bullets: 3–5 short research takeaways (MAX 12 words each) that ALSO appear expanded in the caption.
+- caption: full publishable LinkedIn post following RESEARCH / NATIVE TEXT POST structure. {length_rule}
+- hashtags: array of 3–6 strings (include the #). Also append them at the end of caption.
+- background_prompt: optional supporting photo scene (no text/letters/logos) if a visual is attached later — still required as a string.
+- Only use facts from COMPANY CONTEXT or the user brief.
 
 USER BRIEF:
 {brief}
@@ -516,7 +544,7 @@ USER BRIEF:
             "angle, headline, subhead, bullets, caption, slides"
             if fmt == "carousel"
             else (
-                "angle, headline, subhead, bullets, caption"
+                "angle, headline, subhead, bullets, caption, hashtags, background_prompt"
                 if fmt == "text"
                 else "angle, headline, subhead, bullets, caption, background_prompt"
             )
@@ -527,11 +555,14 @@ return ONLY a JSON array of {n} corrected object(s) with keys: {keys}.
 
 Rules:
 {TOPIC_LOCK_RULES}
+{"- Preserve RESEARCH / NATIVE TEXT POST structure (hook → insight → takeaway → CTA → hashtags)." if fmt == "text" else ""}
+{"- Ensure 3–6 hashtags remain at the end of caption; do not invent fake studies or metrics." if fmt == "text" else ""}
 - Remove or rewrite any claim (stats, clients, awards, quotes) not supported by context/brief.
 - Do NOT dilute the brief topic when removing unsupported claims; expand with on-topic explanation instead of generic B2B filler.
 - Keep captions on-topic and satisfy: {length_rule}
 - Keep headlines ≤7 words (≤12 for text format) and bullets short.
 {"- Strengthen each background_prompt so the RIGHT side has a clear subject (not empty texture) and remains free of text/letters/logos." if fmt == "image" else ""}
+{"- Keep supporting background_prompt free of text/letters/logos (used if a photo is attached to the text post)." if fmt == "text" else ""}
 {"- Keep 5–8 slides; each slide must advance the same topic narrative." if fmt == "carousel" else ""}
 
 USER BRIEF:

@@ -68,8 +68,15 @@ def handler(event, context):
                                 access, author_urn, post.caption, slide_urls
                             )
                     elif cfg_ok:
+                        image_for_share = None
+                        if fmt == "text" and post.image_url:
+                            image_for_share = post.image_url
+                        elif fmt == "image" and post.image_url and not str(
+                            post.image_url
+                        ).startswith("data:"):
+                            image_for_share = post.image_url
                         linkedin_id = _linkedin_ugc_publish(
-                            access, author_urn, post.caption, None
+                            access, author_urn, post.caption, image_for_share
                         )
                 if not linkedin_id:
                     linkedin_id = f"stub-li-{post.post_id}-{int(now.timestamp())}"

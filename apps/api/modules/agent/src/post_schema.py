@@ -46,6 +46,7 @@ class PostVariantPlan(BaseModel):
     image_prompt: str = ""
     format: str = "image"  # text | image | carousel
     slides: List[SlidePlan] = Field(default_factory=list)
+    hashtags: List[str] = Field(default_factory=list)
 
     @field_validator("angle")
     @classmethod
@@ -87,13 +88,13 @@ class PostVariantPlan(BaseModel):
     @classmethod
     def bullets_short(cls, v: list[str]) -> list[str]:
         out = []
-        for b in (v or [])[:4]:
+        for b in (v or [])[:5]:
             s = (b or "").strip()
             if not s:
                 continue
             words = s.split()
-            if len(words) > 8:
-                s = " ".join(words[:8])
+            if len(words) > 12:
+                s = " ".join(words[:12])
             out.append(s)
         return out
 
@@ -102,6 +103,29 @@ class PostVariantPlan(BaseModel):
             object.__setattr__(self, "background_prompt", self.image_prompt)
         if not self.image_prompt and self.background_prompt:
             object.__setattr__(self, "image_prompt", self.background_prompt)
+        # Normalize hashtags and ensure they appear at end of caption for text posts
+        tags = []
+        for t in self.hashtags or []:
+            s = (t or "").strip()
+            if not s:
+                continue
+            if not s.startswith("#"):
+                s = "#" + s.lstrip("#")
+            if s not in tags:
+                tags.append(s)
+        if not tags and self.format == "text":
+            # Pull trailing hashtags already in caption
+            found = re.findall(r"#[A-Za-z0-9_]+", self.caption or "")
+            for f in found:
+                if f not in tags:
+                    tags.append(f)
+            tags = tags[:6]
+        object.__setattr__(self, "hashtags", tags[:6])
+        if self.format == "text" and tags:
+            cap = (self.caption or "").rstrip()
+            missing = [t for t in tags if t.lower() not in cap.lower()]
+            if missing:
+                object.__setattr__(self, "caption", cap + "\n\n" + " ".join(tags))
 
     def to_layout_dict(self) -> dict:
         d: dict[str, Any] = {
@@ -112,6 +136,7 @@ class PostVariantPlan(BaseModel):
             "bullets": self.bullets,
             "caption": self.caption,
             "background_prompt": self.background_prompt,
+            "hashtags": self.hashtags,
         }
         if self.slides:
             d["slides"] = [
@@ -222,11 +247,16 @@ def parse_variant_plans(
             or "",
             "image_prompt": item.get("image_prompt") or item.get("imagePrompt") or "",
             "format": item.get("format") or fmt,
+            "hashtags": item.get("hashtags") or [],
             "slides": slides,
         }
         if fmt == "text":
-            data["background_prompt"] = ""
-            data["image_prompt"] = ""
+            # Keep optional supporting visual prompt for attachImage path
+            if not data["background_prompt"]:
+                data["background_prompt"] = (
+                    f"Editorial supporting photo about: {data['headline']}. "
+                    "No text, letters, numbers, logos, or watermarks."
+                )
         elif fmt == "image" and not data["background_prompt"]:
             data["background_prompt"] = (
                 f"Abstract corporate illustration background for: {data['headline']}. "
@@ -258,6 +288,14 @@ def parse_variant_plans(
             )
             if extra.strip() not in (plan.caption or ""):
                 plan.caption = ((plan.caption or "").rstrip() + extra).strip()
+        # Ensure hashtags stay at the end for research text posts
+        if plan.format == "text" and plan.hashtags:
+            cap = (plan.caption or "").rstrip()
+            missing = [t for t in plan.hashtags if t.lower() not in cap.lower()]
+            if missing or not re.search(r"#[A-Za-z0-9_]+\s*$", cap):
+                # strip trailing hashtag line then re-append canonical set
+                body = re.sub(r"(?:\s*#[A-Za-z0-9_]+)+\s*$", "", cap).rstrip()
+                plan.caption = body + "\n\n" + " ".join(plan.hashtags)
         out.append(plan)
 
     if fmt == "carousel":

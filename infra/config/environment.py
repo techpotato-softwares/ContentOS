@@ -27,6 +27,7 @@ class DatabaseConfig:
     port: int
     name: str
     ssl: bool
+    username: str = "postgres"
 
 
 @dataclass
@@ -65,8 +66,10 @@ _BASE_TAGS = {
 }
 
 # Local + QA: Supabase (SSL). Prod: RDS when features.rds=True.
-_SUPABASE_HOST = os.environ.get("DB_HOST", "db.xxxxxxxxxxxx.supabase.co")
-_SUPABASE_DB = os.environ.get("DB_NAME", "postgres")
+# Override via DB_HOST / DB_NAME / DB_USERNAME in CI or shell if needed.
+_SUPABASE_HOST = os.environ.get("DB_HOST") or "db.oqfodprfkdphkkijypzo.supabase.co"
+_SUPABASE_DB = os.environ.get("DB_NAME") or "postgres"
+_SUPABASE_USER = os.environ.get("DB_USERNAME") or "postgres"
 
 ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
     "dev": EnvironmentConfig(
@@ -86,6 +89,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             port=5432,
             name=_SUPABASE_DB,
             ssl=True,
+            username=_SUPABASE_USER,
         ),
         jwt=JwtConfig(
             secret_id=f"/{APP}/dev/jwt",
@@ -110,6 +114,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             port=5432,
             name=_SUPABASE_DB,
             ssl=True,
+            username=_SUPABASE_USER,
         ),
         jwt=JwtConfig(
             secret_id=f"/{APP}/qa/jwt",
@@ -132,7 +137,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
         database=DatabaseConfig(
             host="",
             port=5432,
-            name=os.environ.get("DB_NAME", "contentos"),
+            name=os.environ.get("DB_NAME") or "contentos",
             ssl=True,
         ),
         jwt=JwtConfig(

@@ -34,6 +34,8 @@ export type ContentPost = {
   subhead?: string
   bullets?: string[]
   format?: "text" | "image" | "carousel" | string
+  hashtags?: string[]
+  attachedImage?: boolean
   slides?: Array<{
     headline?: string
     body?: string
@@ -46,6 +48,8 @@ export type ContentPost = {
     subhead?: string
     bullets?: string[]
     caption?: string
+    hashtags?: string[]
+    attachedImage?: boolean
     slides?: Array<{
       headline?: string
       body?: string
@@ -347,6 +351,7 @@ export const contentApi = createApi({
         newsContext?: string
         preset?: string
         format?: "text" | "image" | "carousel"
+        attachImage?: boolean
         renderMode?: string
         imageModel?: string
         aiProvider?: string
@@ -381,6 +386,7 @@ export const contentApi = createApi({
         generate?: boolean
         userContext?: string
         format?: "text" | "image" | "carousel"
+        attachImage?: boolean
         sessionId?: number
         preset?: string
         renderMode?: string
@@ -473,6 +479,19 @@ export const contentApi = createApi({
         const body =
           typeof arg === "number" ? {} : { publishAs: arg.publishAs }
         return { url: `/api/posts/${id}/publish`, method: "POST", body }
+      },
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Posts"],
+    }),
+    quickPublishPost: build.mutation<
+      ContentPost,
+      number | { id: number; publishAs?: "member" | "organization" }
+    >({
+      query: (arg) => {
+        const id = typeof arg === "number" ? arg : arg.id
+        const body =
+          typeof arg === "number" ? {} : { publishAs: arg.publishAs }
+        return { url: `/api/posts/${id}/quick-publish`, method: "POST", body }
       },
       transformResponse: (r: unknown) => unwrapData(r),
       invalidatesTags: ["Posts"],
@@ -575,6 +594,7 @@ export const {
   useApprovePostMutation,
   useRejectPostMutation,
   usePublishPostMutation,
+  useQuickPublishPostMutation,
   useLinkedInStatusQuery,
   useLinkedInConnectMutation,
   useLazyLinkedInOrganizationsQuery,

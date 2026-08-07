@@ -9,14 +9,16 @@
     "dev:web": "cd apps/web && npm run dev",
     "install:api": "cd apps/api && python3 -m venv .venv && .venv/bin/pip install -U pip setuptools wheel && .venv/bin/pip install -e '.[dev]'",
     "install:web": "cd apps/web && npm install",
-    "install:infra": "cd infra && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "install:infra": "cd infra && ./scripts/ensure-venv.sh",
     "build:layer": "cd apps/api && .venv/bin/python layers/shared/python/scripts/build_layer.py",
     "build:web": "cd apps/web && npm run build",
+    "build:web:deploy": "VITE_BASE=/app/ infra/scripts/build-web.sh",
     "db:init": "cd apps/api && .venv/bin/python scripts/seed.py",
     "test": "cd apps/api && .venv/bin/python -m pytest",
-    "synth:dev": "npm run build:layer && cd infra && ./scripts/deploy.sh dev synth",
-    "deploy:dev": "npm run build:layer && cd infra && ./scripts/deploy.sh dev deploy",
-    "deploy:qa": "npm run build:layer && cd infra && ./scripts/deploy.sh qa deploy"
+    "synth:dev": "npm run build:layer && npm run build:web:deploy && cd infra && ./scripts/deploy.sh dev synth",
+    "deploy:dev": "npm run build:layer && npm run build:web:deploy && cd infra && ./scripts/deploy.sh dev deploy && ./scripts/publish-web.sh dev",
+    "deploy:qa": "npm run build:layer && npm run build:web:deploy && cd infra && ./scripts/deploy.sh qa deploy && ./scripts/publish-web.sh qa",
+    "deploy:prod": "npm run build:layer && npm run build:web:deploy && cd infra && ./scripts/deploy.sh prod deploy && ./scripts/publish-web.sh prod"
   },
   "engines": {
     "node": ">=20.0.0"

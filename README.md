@@ -259,13 +259,16 @@ Local images are served at `/media/...`. In production, uploads go to S3.
 ## Deploy (summary)
 
 ```bash
-npm run build:layer
-npm run build:web
-npm run install:infra
-cd infra && source .venv/bin/activate
-# Configure env from env.template.json → secrets / env.local.json
-cdk synth ApiStack-dev   # or use npm run synth:dev / deploy:qa
+npm run install:api && npm run install:web && npm run install:infra
+npm run deploy:qa     # or deploy:prod
 ```
+
+- **`/`** — marketing placeholder (`apps/marketing`)
+- **`/app/`** — product SPA
+- **QA** — Supabase; after first deploy, set password on Secrets Manager secret `/contentos/qa/db`
+- **Prod** — RDS provisioned by CDK; JWT + DB secrets created automatically
+
+CI: GitHub Actions (`.github/workflows/deploy-qa.yml`, `deploy-prod.yml`). Configure repo secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` only; the rest comes from `infra/config/environment.py` (optional Variables documented in [`infra/README.md`](infra/README.md)).
 
 See [`infra/README.md`](infra/README.md) for Lambda names and DB wiring.
 

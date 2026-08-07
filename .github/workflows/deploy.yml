@@ -1,0 +1,141 @@
+name: Deploy ContentOS
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target environment (qa or prod)
+        required: true
+        type: string
+      ref:
+        description: Git ref to deploy (optional; defaults to calling workflow SHA)
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      APP_NAME: contentos
+      # Optional overrides (GitHub Environment / repo Variables). Defaults live in infra/config/environment.py
+      DB_HOST: ${{ vars.DB_HOST }}
+      DB_NAME: ${{ vars.DB_NAME }}
+      DB_USERNAME: ${{ vars.DB_USERNAME }}
+      CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+      CLOUDFRONT_CERTIFICATE_ARN: ${{ vars.CLOUDFRONT_CERTIFICATE_ARN }}
+      SES_FROM_EMAIL: ${{ vars.SES_FROM_EMAIL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Validate environment
+        run: |
+          case "${{ inputs.environment }}" in
+            qa|prod) echo "Deploying ApiStack-${{ inputs.environment }}" ;;
+            *) echo "Unsupported environment: ${{ inputs.environment }}"; exit 1 ;;
+          esac
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve AWS account
+        id: aws
+        run: |
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+          echo "CDK_DEFAULT_ACCOUNT=$ACCOUNT" >> "$GITHUB_ENV"
+          echo "AWS_ACCOUNT_ID=$ACCOUNT" >> "$GITHUB_ENV"
+          echo "CDK_DEFAULT_REGION=${AWS_REGION}" >> "$GITHUB_ENV"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            infra/requirements.txt
+            apps/api/requirements-layer.txt
+
+      - name: Install API tooling (layer build)
+        working-directory: apps/api
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -U pip setuptools wheel
+          .venv/bin/pip install -e ".[dev]"
+
+      - name: Build Lambda layer
+        run: npm run build:layer
+
+      - name: Build web (initial /app bundle)
+        run: |
+          chmod +x infra/scripts/*.sh
+          VITE_BASE=/app/ infra/scripts/build-web.sh
+
+      - name: Install CDK (Python) + CLI
+        run: |
+          python -m venv infra/.venv
+          infra/.venv/bin/pip install -U pip
+          infra/.venv/bin/pip install -r infra/requirements.txt
+          npm install -g aws-cdk
+
+      - name: Bootstrap CDK (idempotent)
+        working-directory: infra
+        run: |
+          # shellcheck disable=SC1091
+          source .venv/bin/activate
+          npx --yes aws-cdk bootstrap "aws://${CDK_DEFAULT_ACCOUNT}/${CDK_DEFAULT_REGION}"
+
+      - name: CDK deploy
+        working-directory: infra
+        run: |
+          # shellcheck disable=SC1091
+          source .venv/bin/activate
+          npx --yes aws-cdk deploy "ApiStack-${{ inputs.environment }}" --require-approval never
+
+      - name: Publish web with live API URL
+        run: infra/scripts/publish-web.sh "${{ inputs.environment }}"
+
+      - name: Post-deploy reminder (QA Supabase password)
+        if: inputs.environment == 'qa'
+        run: |
+          cat <<'EOF'
+          ============================================================
+          QA uses Supabase. After first deploy, update the password in:
+            Secrets Manager → /contentos/qa/db → password
+          Set it to your Supabase database password.
+          Host/username come from infra/config/environment.py (or DB_* vars).
+          ============================================================
+          EOF
+
+      - name: Summary
+        run: |
+          STACK="ApiStack-${{ inputs.environment }}"
+          echo "### ContentOS ${{ inputs.environment }} deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          aws cloudformation describe-stacks --stack-name "$STACK" \
+            --query "Stacks[0].Outputs[].[ExportName,OutputValue]" --output text \
+            | while IFS=$'\t' read -r name value; do
+                echo "- **${name}**: \`${value}\`" >> "$GITHUB_STEP_SUMMARY"
+              done

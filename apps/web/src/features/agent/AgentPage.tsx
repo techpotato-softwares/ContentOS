@@ -24,6 +24,8 @@ import {
   useScoreBatchMutation,
   useRepurposeMutation,
   useAbScheduleMutation,
+  useQuickPublishPostMutation,
+  useLinkedInStatusQuery,
   type ContentPost,
   type AbScheduleSuggestion,
   type PostScore,
@@ -97,14 +99,20 @@ function ScoreBadge({ score }: { score: PostScore }) {
 function PostCard({
   p,
   scoring,
+  posting,
   onScore,
+  onPostLinkedIn,
 }: {
   p: ContentPost
   scoring: boolean
+  posting?: boolean
   onScore: (id: number) => void
+  onPostLinkedIn?: (id: number) => void
 }) {
   const fmt = p.format || p.layout?.format || (p.imageUrl ? "image" : "text")
   const slides = p.slides || p.layout?.slides || []
+  const tags = p.hashtags || p.layout?.hashtags || []
+  const canPost = p.status !== "published" && p.status !== "rejected"
   return (
     <motion.article
       key={p.postId}
@@ -118,12 +126,28 @@ function PostCard({
           imageUrl={slides[0].imageUrl}
           filename={`contentos-carousel-${p.postId}.png`}
         />
-      ) : fmt === "text" || !p.imageUrl ? (
-        <div className="px-3 pt-3">
+      ) : fmt === "text" ? (
+        <div className="px-3 pt-3 space-y-2">
+          {p.imageUrl && (
+            <PostMedia
+              compact
+              imageUrl={p.imageUrl}
+              filename={`contentos-text-${p.postId}.png`}
+            />
+          )}
           <div className="rounded-lg border border-border bg-muted/30 p-3">
             <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">
-              {fmt === "carousel" ? `Carousel · ${slides.length} slides` : "Text post"}
+              Research text{p.imageUrl || p.attachedImage ? " + image" : ""}
             </p>
+            <p className="text-xs whitespace-pre-wrap line-clamp-10">{p.caption}</p>
+            {tags.length > 0 && (
+              <p className="text-[10px] text-primary mt-2">{tags.join(" ")}</p>
+            )}
+          </div>
+        </div>
+      ) : !p.imageUrl ? (
+        <div className="px-3 pt-3">
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
             <p className="text-xs whitespace-pre-wrap line-clamp-6">{p.caption}</p>
           </div>
         </div>
@@ -154,15 +178,31 @@ function PostCard({
           <p className="text-[10px] text-muted-foreground">{slides.length} slides ready</p>
         )}
         {p.score && <ScoreBadge score={p.score} />}
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-[11px]"
-          disabled={scoring}
-          onClick={() => onScore(p.postId)}
-        >
-          {p.score ? "Re-score" : "Score"}
-        </Button>
+        {p.status === "published" && (
+          <p className="text-[10px] text-primary">Posted {p.linkedinPostId}</p>
+        )}
+        <div className="flex flex-wrap gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[11px]"
+            disabled={scoring}
+            onClick={() => onScore(p.postId)}
+          >
+            {p.score ? "Re-score" : "Score"}
+          </Button>
+          {canPost && onPostLinkedIn && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 text-[11px]"
+              disabled={posting}
+              onClick={() => onPostLinkedIn(p.postId)}
+            >
+              Post to LinkedIn
+            </Button>
+          )}
+        </div>
       </div>
     </motion.article>
   )
@@ -214,8 +254,14 @@ export function AgentPage() {
     title?: string
   } | null>(null)
   const [postFormat, setPostFormat] = useState<"text" | "image" | "carousel">("image")
+  const [attachImage, setAttachImage] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
+  const [quickPublish, quickPublishState] = useQuickPublishPostMutation()
+  const { data: liStatus } = useLinkedInStatusQuery()
+  const linkedInReady = Boolean(
+    liStatus?.member?.connected || liStatus?.organization?.connected || liStatus?.connected,
+  )
   const fileRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -420,6 +466,7 @@ export function AgentPage() {
         generate: true,
         userContext: contextNote || undefined,
         format: postFormat,
+        attachImage: postFormat === "text" ? attachImage : undefined,
         sessionId,
         preset,
         renderMode,
@@ -465,6 +512,7 @@ export function AgentPage() {
         generate: true,
         userContext: contextNote || undefined,
         format: postFormat,
+        attachImage: postFormat === "text" ? attachImage : undefined,
         sessionId,
         preset,
         renderMode,
@@ -525,6 +573,7 @@ export function AgentPage() {
       sessionId,
       preset,
       format: postFormat,
+      attachImage: postFormat === "text" ? attachImage : undefined,
       renderMode,
       imageModel,
       aiProvider,
@@ -619,6 +668,7 @@ export function AgentPage() {
       filename: file.name,
       generate: true,
       format: postFormat,
+      attachImage: postFormat === "text" ? attachImage : undefined,
       sessionId,
       preset,
       renderMode,
@@ -716,6 +766,37 @@ export function AgentPage() {
       )
     } catch {
       /* ignore */
+    }
+  }
+
+  const onPostLinkedIn = async (postId: number) => {
+    if (!linkedInReady) {
+      setGenError("Connect LinkedIn first (Connections → LinkedIn), then post.")
+      return
+    }
+    setGenError(null)
+    try {
+      const updated = await quickPublish(postId).unwrap()
+      setPosts((prev) => prev.map((p) => (p.postId === postId ? { ...p, ...updated } : p)))
+      setBatches((prev) =>
+        prev.map((b) => ({
+          ...b,
+          posts: b.posts.map((p) => (p.postId === postId ? { ...p, ...updated } : p)),
+        })),
+      )
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content: `Posted to LinkedIn (#${postId}${updated.linkedinPostId ? ` · ${updated.linkedinPostId}` : ""}).`,
+        },
+      ])
+    } catch (e: unknown) {
+      const msg =
+        (e as { data?: { message?: string; error?: string } })?.data?.message ||
+        (e as { data?: { error?: string } })?.data?.error ||
+        "LinkedIn post failed — check connection and try again."
+      setGenError(String(msg))
     }
   }
 
@@ -1051,10 +1132,22 @@ export function AgentPage() {
                   setPostFormat(e.target.value as "text" | "image" | "carousel")
                 }
               >
-                <option value="image">Image</option>
-                <option value="text">Text</option>
+                <option value="image">Image graphic</option>
+                <option value="text">Research text</option>
                 <option value="carousel">Carousel</option>
               </select>
+              {postFormat === "text" && (
+                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="rounded border-border"
+                    checked={attachImage}
+                    disabled={busy}
+                    onChange={(e) => setAttachImage(e.target.checked)}
+                  />
+                  Attach image
+                </label>
+              )}
               <div className="flex gap-2 flex-1 justify-end">
                 <Button
                   onClick={() => void send()}
@@ -1081,7 +1174,11 @@ export function AgentPage() {
                   </Button>
                 ) : (
                   <Button variant="secondary" size="sm" onClick={() => void onGenerate()}>
-                    {postFormat === "carousel" ? "Generate carousel" : "Generate"}
+                    {postFormat === "carousel"
+                      ? "Generate carousel"
+                      : postFormat === "text"
+                        ? "Generate research posts"
+                        : "Generate"}
                   </Button>
                 )}
               </div>
@@ -1234,7 +1331,9 @@ export function AgentPage() {
                       key={p.postId}
                       p={p}
                       scoring={scoreState.isLoading}
+                      posting={quickPublishState.isLoading}
                       onScore={(id) => void onScore(id)}
+                      onPostLinkedIn={(id) => void onPostLinkedIn(id)}
                     />
                   ))}
                 </div>

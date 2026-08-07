@@ -5,6 +5,7 @@ import {
   useApprovePostMutation,
   useRejectPostMutation,
   usePublishPostMutation,
+  useQuickPublishPostMutation,
   useScorePostMutation,
   useLinkedInStatusQuery,
 } from "@/features/api/contentApi"
@@ -106,6 +107,7 @@ export function ReviewPage() {
   const [approve] = useApprovePostMutation()
   const [reject] = useRejectPostMutation()
   const [publish, publishState] = usePublishPostMutation()
+  const [quickPublish, quickState] = useQuickPublishPostMutation()
   const [scorePost, scoreState] = useScorePostMutation()
   const [publishAs, setPublishAs] = useState<"member" | "organization" | "auto">("auto")
   const [publishError, setPublishError] = useState<string | null>(null)
@@ -174,12 +176,29 @@ export function ReviewPage() {
             >
               {fmt === "carousel" && slides.length > 0 ? (
                 <CarouselPreview slides={slides} />
-              ) : fmt === "text" || !p.imageUrl ? (
-                <div className="px-4 pt-4">
+              ) : fmt === "text" ? (
+                <div className="px-4 pt-4 space-y-2">
+                  {p.imageUrl && (
+                    <PostMedia
+                      imageUrl={p.imageUrl}
+                      filename={`contentos-text-${p.postId}.png`}
+                    />
+                  )}
                   <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-[140px]">
                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">
-                      Text post
+                      Research text{p.imageUrl || p.attachedImage ? " + image" : ""}
                     </p>
+                    <p className="text-sm whitespace-pre-wrap line-clamp-12">{p.caption}</p>
+                    {(p.hashtags || p.layout?.hashtags)?.length ? (
+                      <p className="text-xs text-primary mt-3">
+                        {(p.hashtags || p.layout?.hashtags || []).join(" ")}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : !p.imageUrl ? (
+                <div className="px-4 pt-4">
+                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-[140px]">
                     <p className="text-sm whitespace-pre-wrap line-clamp-8">{p.caption}</p>
                   </div>
                 </div>
@@ -249,10 +268,37 @@ export function ReviewPage() {
                       </Button>
                     </>
                   )}
-                  {p.status === "approved" && (
+                  {p.status !== "published" && p.status !== "rejected" && (
                     <Button
                       size="sm"
                       variant="secondary"
+                      disabled={quickState.isLoading || publishState.isLoading}
+                      onClick={async () => {
+                        setPublishError(null)
+                        try {
+                          await quickPublish(
+                            publishAs === "auto"
+                              ? p.postId
+                              : { id: p.postId, publishAs },
+                          ).unwrap()
+                          void refetch()
+                        } catch (e: unknown) {
+                          const msg =
+                            (e as { data?: { message?: string; error?: string } })?.data
+                              ?.message ||
+                            (e as { data?: { error?: string } })?.data?.error ||
+                            "Post to LinkedIn failed"
+                          setPublishError(String(msg))
+                        }
+                      }}
+                    >
+                      Post to LinkedIn
+                    </Button>
+                  )}
+                  {p.status === "approved" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
                       disabled={publishState.isLoading}
                       onClick={async () => {
                         setPublishError(null)
@@ -273,7 +319,7 @@ export function ReviewPage() {
                         }
                       }}
                     >
-                      {p.scheduledAt ? "Publish now" : "Publish to LinkedIn"}
+                      {p.scheduledAt ? "Publish now" : "Publish (approved)"}
                     </Button>
                   )}
                   {p.status === "published" && (

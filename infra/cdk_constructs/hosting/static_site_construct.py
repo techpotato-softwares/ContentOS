@@ -1,7 +1,8 @@
-"""Optional S3 + CloudFront static site (disabled by default in Python kit)."""
+"""S3 + CloudFront: marketing site at `/`, SPA at `/app`."""
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from aws_cdk import CfnOutput, RemovalPolicy
 from aws_cdk import aws_certificatemanager as acm
@@ -14,6 +15,28 @@ from constructs import Construct
 
 from config.environment import EnvironmentConfig
 
+# Rewrites /app and /app/<spa-routes> → /app/index.html (assets with '.' pass through).
+_SPA_APP_FUNCTION = """
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  if (uri === '/app' || uri === '/app/') {
+    request.uri = '/app/index.html';
+    return request;
+  }
+
+  if (uri.startsWith('/app/')) {
+    var rest = uri.substring(5);
+    if (rest.length > 0 && rest.indexOf('.') === -1) {
+      request.uri = '/app/index.html';
+    }
+  }
+
+  return request;
+}
+"""
+
 
 class StaticSiteConstruct(Construct):
     def __init__(
@@ -23,6 +46,7 @@ class StaticSiteConstruct(Construct):
         *,
         config: EnvironmentConfig,
         ui_build_path: str,
+        marketing_path: str,
     ) -> None:
         super().__init__(scope, construct_id)
         is_prod = config.environment == "prod"
@@ -59,6 +83,14 @@ class StaticSiteConstruct(Construct):
                 self, "CustomCert", config.cloudfront_certificate_arn
             )
 
+        spa_fn = cloudfront.Function(
+            self,
+            "AppSpaRouter",
+            function_name=f"contentos-app-spa-{config.environment}",
+            code=cloudfront.FunctionCode.from_inline(_SPA_APP_FUNCTION),
+            comment="SPA fallback for /app/* routes",
+        )
+
         dist_kwargs: dict = {
             "comment": f"ContentOS UI - {config.environment}",
             "default_behavior": cloudfront.BehaviorOptions(
@@ -71,6 +103,12 @@ class StaticSiteConstruct(Construct):
                 cache_policy=cloudfront.CachePolicy.CACHING_OPTIMIZED,
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
                 compress=True,
+                function_associations=[
+                    cloudfront.FunctionAssociation(
+                        function=spa_fn,
+                        event_type=cloudfront.FunctionEventType.VIEWER_REQUEST,
+                    )
+                ],
             ),
             "default_root_object": "index.html",
             "error_responses": [
@@ -121,24 +159,59 @@ class StaticSiteConstruct(Construct):
             )
         )
 
+        marketing = Path(marketing_path)
+        if not marketing.is_dir():
+            raise FileNotFoundError(
+                f"Marketing site path missing: {marketing}. "
+                "Expected apps/marketing with index.html"
+            )
+
+        ui = Path(ui_build_path)
+        if not (ui / "index.html").is_file():
+            raise FileNotFoundError(
+                f"Web build missing at {ui}. Run: npm run build:web "
+                "(with VITE_BASE=/app/ for deploy)"
+            )
+
+        # Marketing website at CloudFront `/`
         s3deploy.BucketDeployment(
             self,
-            "DeployWebsite",
-            sources=[s3deploy.Source.asset(ui_build_path)],
+            "DeployMarketing",
+            sources=[s3deploy.Source.asset(str(marketing))],
             destination_bucket=self.bucket,
             distribution=self.distribution,
-            distribution_paths=["/*"],
+            distribution_paths=["/index.html", "/"],
+            memory_limit=512,
+        )
+
+        # Application SPA under `/app/`
+        s3deploy.BucketDeployment(
+            self,
+            "DeployApp",
+            sources=[s3deploy.Source.asset(str(ui))],
+            destination_bucket=self.bucket,
+            destination_key_prefix="app",
+            distribution=self.distribution,
+            distribution_paths=["/app/*"],
             memory_limit=512,
         )
 
         self.website_url = f"https://{self.distribution.distribution_domain_name}"
+        self.app_url = f"{self.website_url}/app/"
 
         CfnOutput(
             self,
             "WebsiteURL",
             value=self.website_url,
-            description=f"CloudFront URL for ContentOS UI - {config.environment}",
+            description=f"Marketing site URL (root) - {config.environment}",
             export_name=f"ContentOS-UI-URL-{config.environment}",
+        )
+        CfnOutput(
+            self,
+            "AppURL",
+            value=self.app_url,
+            description=f"Application URL (/app) - {config.environment}",
+            export_name=f"ContentOS-App-URL-{config.environment}",
         )
         CfnOutput(
             self,

@@ -19,7 +19,7 @@ def _load_local_env_vars() -> dict[str, str]:
         return {}
     try:
         env_config = json.loads(ENV_LOCAL_JSON.read_text(encoding="utf-8"))
-            env_vars = (
+        env_vars = (
             env_config.get("contentos-auth-dev")
             or env_config.get("arcforge-auth-dev")
             or env_config.get("Parameters")

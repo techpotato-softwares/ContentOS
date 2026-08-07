@@ -1,0 +1,23 @@
+name: Deploy QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "infra/**"
+      - "package.json"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/deploy-qa.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: qa
+    secrets: inherit

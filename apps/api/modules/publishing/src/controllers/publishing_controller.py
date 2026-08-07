@@ -273,6 +273,11 @@ def _post_dict(p: ContentPost) -> dict:
         "subhead": (layout or {}).get("subhead"),
         "bullets": (layout or {}).get("bullets"),
         "slides": (layout or {}).get("slides"),
+        "hashtags": (layout or {}).get("hashtags"),
+        "attachedImage": bool(
+            (layout or {}).get("attachedImage")
+            or ((layout or {}).get("format") == "text" and p.image_url)
+        ),
         "score": score,
         "sourceType": getattr(p, "source_type", None),
         "sourceRef": getattr(p, "source_ref", None),
@@ -749,9 +754,15 @@ class PublishingController:
                         "LINKEDIN_CAROUSEL_UNAVAILABLE",
                     )
             elif cfg_ok:
-                # Text (and image creatives) publish caption as text share
+                # Text research posts: caption (+ optional supporting image)
+                # Image creatives: still publish caption; attach image when URL is fetchable
+                image_for_share = None
+                if fmt == "text" and post.image_url:
+                    image_for_share = post.image_url
+                elif fmt == "image" and post.image_url and not str(post.image_url).startswith("data:"):
+                    image_for_share = post.image_url
                 linkedin_id = _linkedin_ugc_publish(
-                    access, author_urn, post.caption, None
+                    access, author_urn, post.caption, image_for_share
                 )
             else:
                 linkedin_id = f"stub-li-{post.post_id}-{int(datetime.utcnow().timestamp())}"
@@ -773,6 +784,42 @@ class PublishingController:
             session.commit()
             session.refresh(post)
             return create_success_response(_post_dict(post))
+
+    @Post("/posts/{id}/quick-publish")
+    @RequireModule("publishing")
+    @RequirePermission("posts:publish")
+    def quick_publish(self, id: str, data: dict | None = None, user=None):
+        """One-click: approve (if needed) then publish to LinkedIn — ideal for research text posts."""
+        _ensure_social_account_columns()
+        tid = resolve_tenant_id(user)
+        data = data or {}
+        with get_session() as session:
+            post = session.get(ContentPost, int(id))
+            if not post or post.tenant_id != tid:
+                raise NotFoundError("Post not found")
+            if post.status == "published":
+                return create_success_response(_post_dict(post))
+            if post.status == "rejected":
+                raise ValidationError("Cannot publish a rejected post — regenerate or restore first")
+            if post.status in ("draft", "pending_review"):
+                post.status = "approved"
+                post.reviewed_by = user["userId"]
+                post.reviewed_at = datetime.utcnow()
+                post.updated_at = datetime.utcnow()
+                session.add(post)
+                write_audit(
+                    session,
+                    tenant_id=tid,
+                    actor_user_id=user["userId"],
+                    action="posts.approve",
+                    resource_type="content_post",
+                    resource_id=str(post.post_id),
+                    detail="quick_publish",
+                )
+                session.commit()
+                session.refresh(post)
+        # Reuse publish gate
+        return self.publish(id, data=data, user=user)
 
     @Post("/posts/{id}/schedule")
     @RequireModule("publishing")
@@ -902,27 +949,92 @@ def _list_organization_pages(access_token: str) -> list[dict]:
     return out
 
 
-def _linkedin_ugc_publish(
-    access_token: str, author_urn: str, caption: str, image_url: str | None
-) -> str:
-    """Publish text caption via LinkedIn ugcPosts."""
+def _register_linkedin_image(client: httpx.Client, access_token: str, author_urn: str, image_bytes: bytes) -> str | None:
+    """Register + upload image asset; return asset URN or None on failure."""
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
         "X-Restli-Protocol-Version": "2.0.0",
     }
-    share = {
-        "author": author_urn,
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": (caption or "")[:2900]},
-                "shareMediaCategory": "NONE",
-            }
-        },
-        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+    register = {
+        "registerUploadRequest": {
+            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "owner": author_urn,
+            "serviceRelationships": [
+                {
+                    "relationshipType": "OWNER",
+                    "identifier": "urn:li:userGeneratedContent",
+                }
+            ],
+        }
     }
-    with httpx.Client(timeout=60.0) as client:
+    reg = client.post(
+        "https://api.linkedin.com/v2/assets?action=registerUpload",
+        headers=headers,
+        json=register,
+    )
+    if reg.status_code >= 400:
+        return None
+    value = (reg.json() or {}).get("value") or {}
+    asset = value.get("asset")
+    upload_mech = (
+        (value.get("uploadMechanism") or {})
+        .get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest")
+        or {}
+    )
+    upload_url = upload_mech.get("uploadUrl")
+    if not asset or not upload_url:
+        return None
+    up = client.put(
+        upload_url,
+        content=image_bytes,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/octet-stream",
+        },
+    )
+    if up.status_code >= 400:
+        return None
+    return asset
+
+
+def _linkedin_ugc_publish(
+    access_token: str, author_urn: str, caption: str, image_url: str | None
+) -> str:
+    """Publish text caption via LinkedIn ugcPosts; attach image when provided."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+    }
+    share_content: dict = {
+        "shareCommentary": {"text": (caption or "")[:2900]},
+        "shareMediaCategory": "NONE",
+    }
+    with httpx.Client(timeout=120.0) as client:
+        if image_url:
+            raw = _fetch_image_bytes(image_url)
+            if raw:
+                asset = _register_linkedin_image(client, access_token, author_urn, raw)
+                if asset:
+                    share_content = {
+                        "shareCommentary": {"text": (caption or "")[:2900]},
+                        "shareMediaCategory": "IMAGE",
+                        "media": [
+                            {
+                                "status": "READY",
+                                "description": {"text": "Image"},
+                                "media": asset,
+                                "title": {"text": "Image"},
+                            }
+                        ],
+                    }
+        share = {
+            "author": author_urn,
+            "lifecycleState": "PUBLISHED",
+            "specificContent": {"com.linkedin.ugc.ShareContent": share_content},
+            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+        }
         r = client.post("https://api.linkedin.com/v2/ugcPosts", headers=headers, json=share)
         if r.status_code >= 400:
             raise AppError(f"LinkedIn publish failed: {r.text[:400]}", 502, "LINKEDIN_ERROR")

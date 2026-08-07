@@ -205,7 +205,11 @@ def _post_dict(p: ContentPost) -> dict:
         "subhead": (layout or {}).get("subhead"),
         "bullets": (layout or {}).get("bullets"),
         "slides": (layout or {}).get("slides"),
+        "hashtags": (layout or {}).get("hashtags"),
         "format": (layout or {}).get("format") or ("text" if not p.image_url else "image"),
+        "attachedImage": bool((layout or {}).get("attachedImage") or (
+            (layout or {}).get("format") == "text" and p.image_url
+        )),
         "score": score,
         "sourceType": getattr(p, "source_type", None),
         "sourceRef": getattr(p, "source_ref", None),
@@ -397,6 +401,10 @@ class AgentController:
         post_format = (data.get("format") or "image").strip().lower()
         if post_format not in ("text", "image", "carousel"):
             post_format = "image"
+        attach_image = bool(data.get("attachImage") or data.get("withImage"))
+        # Research text can optionally include a supporting photo
+        if post_format == "text" and attach_image:
+            pass  # handled in compose branch
         preset = data.get("preset") or DEFAULT_PRESET
         if preset not in LINKEDIN_PRESETS:
             preset = DEFAULT_PRESET
@@ -446,7 +454,7 @@ class AgentController:
             brand_lines = _brand_lines(tenant)
             img_provider = None
             gen_size = None
-            if post_format in ("image", "carousel"):
+            if post_format in ("image", "carousel") or (post_format == "text" and attach_image):
                 img_provider = get_image_provider(image_model)
                 gen_size = nearest_gen_size(
                     width, height, getattr(img_provider, "model_id", "gpt-image-1")
@@ -471,16 +479,42 @@ class AgentController:
 
                 if post_format == "text":
                     layout["format"] = "text"
+                    layout["postStyle"] = "research"
+                    if plan.hashtags:
+                        layout["hashtags"] = plan.hashtags
+                    uploaded = {"s3Key": None, "imageUrl": None}
+                    bg_prompt = ""
+                    if attach_image and img_provider and gen_size:
+                        bg_prompt = enrich_background_prompt(
+                            plan.background_prompt
+                            or f"Editorial supporting photo about {plan.headline}, no text",
+                            brand,
+                        )
+                        # Supporting photo only — no text overlay template
+                        bg = img_provider.generate_background(bg_prompt, gen_size)
+                        try:
+                            from PIL import Image
+                            import io
+
+                            im = Image.open(io.BytesIO(bg)).convert("RGB")
+                            im = im.resize((width, height), Image.Resampling.LANCZOS)
+                            buf = io.BytesIO()
+                            im.save(buf, format="PNG")
+                            final_bytes = buf.getvalue()
+                        except Exception:
+                            final_bytes = bg
+                        uploaded = upload_tenant_image(tid, final_bytes)
+                        layout["attachedImage"] = True
                     post = ContentPost(
                         tenant_id=tid,
                         batch_id=batch.batch_id,
                         user_id=user["userId"],
                         angle=plan.angle,
                         caption=plan.caption,
-                        image_prompt="",
+                        image_prompt=bg_prompt,
                         layout_json=json.dumps(layout),
-                        image_s3_key=None,
-                        image_url=None,
+                        image_s3_key=uploaded.get("s3Key"),
+                        image_url=uploaded.get("imageUrl"),
                         status="draft",
                         source_type=source_type,
                         source_ref=source_ref,
@@ -675,6 +709,7 @@ class AgentController:
                     "angles": list(ANGLES),
                     "preset": preset,
                     "format": post_format,
+                    "attachImage": attach_image if post_format == "text" else False,
                     "renderMode": render_mode,
                     "imageModel": getattr(img_provider, "model_id", image_model)
                     if img_provider
@@ -889,6 +924,7 @@ class AgentController:
             "sessionId": data.get("sessionId"),
             "preset": data.get("preset"),
             "format": data.get("format") or "image",
+            "attachImage": bool(data.get("attachImage") or data.get("withImage")),
             "renderMode": data.get("renderMode"),
             "imageModel": data.get("imageModel"),
             "aiProvider": data.get("aiProvider") or data.get("textProvider"),
