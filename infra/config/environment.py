@@ -65,11 +65,20 @@ _BASE_TAGS = {
     "Runtime": "python",
 }
 
-# Local + QA: Supabase (SSL). Prod: RDS when features.rds=True.
-# Override via DB_HOST / DB_NAME / DB_USERNAME in CI or shell if needed.
-_SUPABASE_HOST = os.environ.get("DB_HOST") or "db.oqfodprfkdphkkijypzo.supabase.co"
+# Local + QA: Supabase via **pooler** (IPv4). Direct db.*.supabase.co is IPv6-only
+# and fails from Lambda ("Cannot assign requested address").
+# Override via DB_HOST / DB_PORT / DB_NAME / DB_USERNAME in CI or shell if needed.
+_SUPABASE_PROJECT_REF = os.environ.get("SUPABASE_PROJECT_REF") or "oqfodprfkdphkkijypzo"
+_SUPABASE_HOST = (
+    os.environ.get("DB_HOST")
+    or "aws-1-ap-south-1.pooler.supabase.com"
+)
+_SUPABASE_PORT = int(os.environ.get("DB_PORT") or "5432")  # session mode on pooler
 _SUPABASE_DB = os.environ.get("DB_NAME") or "postgres"
-_SUPABASE_USER = os.environ.get("DB_USERNAME") or "postgres"
+# Pooler requires username form: postgres.<project-ref>
+_SUPABASE_USER = (
+    os.environ.get("DB_USERNAME") or f"postgres.{_SUPABASE_PROJECT_REF}"
+)
 
 ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
     "dev": EnvironmentConfig(
@@ -86,7 +95,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
         features=FeatureFlags(s3=True, static_site=True, rds=False),
         database=DatabaseConfig(
             host=_SUPABASE_HOST,
-            port=5432,
+            port=_SUPABASE_PORT,
             name=_SUPABASE_DB,
             ssl=True,
             username=_SUPABASE_USER,
@@ -111,7 +120,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
         features=FeatureFlags(s3=True, static_site=True, rds=False),
         database=DatabaseConfig(
             host=_SUPABASE_HOST,
-            port=5432,
+            port=_SUPABASE_PORT,
             name=_SUPABASE_DB,
             ssl=True,
             username=_SUPABASE_USER,
