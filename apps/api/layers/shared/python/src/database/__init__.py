@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel, Session
@@ -9,17 +9,10 @@ _SessionLocal = None
 
 
 def _resolve_database_url() -> str:
-    """Prefer DB_* components (password URL-encoded). Raw DATABASE_URL only if no DB_HOST."""
-    from config import get_local_database_config, build_database_url
+    """Local: DB_* / DATABASE_URL from env. QA/Prod: credentials from Secrets Manager."""
+    from utils.secrets import get_database_url
 
-    if os.environ.get("DB_HOST"):
-        return build_database_url(get_local_database_config())
-
-    url = os.environ.get("DATABASE_URL")
-    if url:
-        return url
-
-    return build_database_url(get_local_database_config())
+    return get_database_url()
 
 
 def get_engine():
