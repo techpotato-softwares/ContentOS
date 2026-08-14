@@ -67,7 +67,9 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            apps/marketing/package-lock.json
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -92,6 +94,9 @@ jobs:
         run: |
           chmod +x infra/scripts/*.sh
           VITE_BASE=/app/ infra/scripts/build-web.sh
+
+      - name: Build marketing site
+        run: npm run build:marketing
 
       - name: Install CDK (Python) + CLI
         run: |
