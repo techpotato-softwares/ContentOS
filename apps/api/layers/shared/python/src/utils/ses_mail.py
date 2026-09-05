@@ -26,18 +26,25 @@ def send_email(
     if not recipients:
         return {"sent": False, "reason": "no_recipients"}
 
-    from_addr = (os.environ.get("SES_FROM_EMAIL") or "").strip()
+    from_addr = (
+        os.environ.get("SES_FROM_EMAIL") or os.environ.get("FROM_EMAIL") or ""
+    ).strip()
     if not from_addr:
-        logger.warn("SES_FROM_EMAIL missing; email not sent", {"subject": subject})
+        logger.warn("SES_FROM_EMAIL/FROM_EMAIL missing; email not sent", {"subject": subject})
         return {"sent": False, "reason": "missing_from", "preview": subject}
 
     if not ses_enabled():
+        preview_src = text_body or html_body or ""
+        if "token=" in preview_src:
+            import re
+
+            preview_src = re.sub(r"(token=)[^&\s\"']+", r"\1[REDACTED]", preview_src)
         logger.info(
             "SES disabled — email preview only",
             {
-                "to": recipients,
+                "toCount": len(recipients),
                 "subject": subject,
-                "textPreview": (text_body or html_body)[:400],
+                "textPreview": preview_src[:200],
             },
         )
         return {

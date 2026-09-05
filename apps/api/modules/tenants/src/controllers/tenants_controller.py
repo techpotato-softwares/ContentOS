@@ -1,13 +1,31 @@
 from __future__ import annotations
 import json
 from datetime import datetime
+from passlib.hash import bcrypt
 from sqlmodel import select
 from decorators import Controller, Get, Post, Put, Delete
-from decorators.auth_decorators import RequirePermission, RequireModule
+from decorators.auth_decorators import RequirePermission, RequireModule, ApiPublic
 from database import get_session
-from database.models import Tenant, TrainingDocument
-from middleware.error_handler import NotFoundError, ValidationError, create_success_response
+from database.models import Tenant, TrainingDocument, User, Role, TenantInvite
+from middleware.error_handler import (
+    AppError,
+    NotFoundError,
+    ValidationError,
+    create_success_response,
+)
 from utils.tenant import resolve_tenant_id, is_super_admin, require_user, write_audit
+from utils.tenant_invites import (
+    STATUS_ACCEPTED,
+    STATUS_PENDING,
+    STATUS_REVOKED,
+    assert_invite_acceptable,
+    ensure_invite_schema,
+    invite_public_dict,
+    is_local,
+    issue_invite_token,
+    load_invite_by_raw_token,
+)
+from utils.invite_email import send_tenant_invite_email
 from training.schema import (
     parse_training,
     render_context_pack,
@@ -454,3 +472,204 @@ class TenantsController:
                 _rebuild_pack(session, t)
             session.commit()
             return create_success_response({"deleted": True})
+
+    @Post("/invites")
+    @RequireModule("tenants")
+    @RequirePermission("tenant:admin", "admin:tenants")
+    def create_invite(self, data: dict, user=None, query: dict | None = None):
+        """Invite a teammate by email. Admin-only."""
+        require_user(user)
+        q = query or {}
+        requested = None
+        if (data or {}).get("tenantId") and is_super_admin(user):
+            requested = int(data["tenantId"])
+        elif q.get("tenantId"):
+            requested = int(q["tenantId"])
+        tid = resolve_tenant_id(user, requested)
+        email = ((data or {}).get("email") or "").strip().lower()
+        role = (data or {}).get("role") or "tenant_member"
+        with get_session() as session:
+            ensure_invite_schema(session)
+            tenant = session.get(Tenant, tid)
+            if not tenant or not tenant.is_active:
+                raise NotFoundError("Tenant not found")
+            existing = session.exec(
+                select(User).where(User.email == email, User.is_active == True)
+            ).first()
+            if existing:
+                if int(existing.tenant_id or 0) == int(tid):
+                    raise ValidationError("User is already a member of this tenant")
+                raise AppError(
+                    "This email already belongs to another account",
+                    409,
+                    "EMAIL_IN_USE",
+                )
+            row, raw = issue_invite_token(
+                session,
+                tenant_id=tid,
+                email=email,
+                role=role,
+                invited_by=int(user.get("userId") or 0) or None,
+            )
+            mail = send_tenant_invite_email(
+                to_email=email,
+                raw_token=raw,
+                tenant_name=tenant.name,
+                role=row.role,
+            )
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=user.get("userId"),
+                action="tenant.invite.create",
+                resource_type="tenant_invite",
+                resource_id=str(row.invite_id),
+                detail=email,
+            )
+            session.commit()
+            session.refresh(row)
+            out = invite_public_dict(row, tenant_name=tenant.name)
+            if is_local() and mail.get("devLink"):
+                out["devLink"] = mail["devLink"]
+            return create_success_response(out, 201)
+
+    @Get("/invites")
+    @RequireModule("tenants")
+    @RequirePermission("tenant:admin", "admin:tenants")
+    def list_invites(self, user=None, query: dict | None = None):
+        require_user(user)
+        q = query or {}
+        tid = resolve_tenant_id(
+            user, int(q["tenantId"]) if q.get("tenantId") else None
+        )
+        with get_session() as session:
+            ensure_invite_schema(session)
+            now = datetime.utcnow()
+            rows = session.exec(
+                select(TenantInvite)
+                .where(
+                    TenantInvite.tenant_id == tid,
+                    TenantInvite.status == STATUS_PENDING,
+                )
+                .order_by(TenantInvite.created_at.desc())
+            ).all()
+            out = [
+                invite_public_dict(row)
+                for row in rows
+                if row.expires_at and row.expires_at >= now
+            ]
+            return create_success_response(out)
+
+    @Delete("/invites/{id}")
+    @RequireModule("tenants")
+    @RequirePermission("tenant:admin", "admin:tenants")
+    def revoke_invite(self, id: str, user=None, query: dict | None = None):
+        require_user(user)
+        q = query or {}
+        tid = resolve_tenant_id(
+            user, int(q["tenantId"]) if q.get("tenantId") else None
+        )
+        with get_session() as session:
+            ensure_invite_schema(session)
+            row = session.get(TenantInvite, int(id))
+            if not row or row.tenant_id != tid:
+                raise NotFoundError("Invite not found")
+            if row.status != STATUS_PENDING:
+                raise ValidationError("Only pending invites can be revoked")
+            row.status = STATUS_REVOKED
+            row.updated_at = datetime.utcnow()
+            session.add(row)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=user.get("userId"),
+                action="tenant.invite.revoke",
+                resource_type="tenant_invite",
+                resource_id=str(row.invite_id),
+            )
+            session.commit()
+            return create_success_response({"revoked": True, "inviteId": row.invite_id})
+
+    @Post("/invites/{token}/accept")
+    @ApiPublic()
+    def accept_invite(self, token: str, data: dict | None = None):
+        """Accept invite and create membership on the invited tenant."""
+        data = data or {}
+        username = (data.get("username") or "").strip()
+        password = data.get("password") or ""
+        if not username or len(username) < 3:
+            raise ValidationError("username must be at least 3 characters")
+        if not password or len(str(password)) < 8:
+            raise ValidationError("password must be at least 8 characters")
+        with get_session() as session:
+            ensure_invite_schema(session)
+            row = load_invite_by_raw_token(session, token)
+            assert_invite_acceptable(row)
+            tenant = session.get(Tenant, row.tenant_id)
+            if not tenant or not tenant.is_active:
+                raise AppError("Invalid or expired invite", 400, "INVALID_INVITE")
+
+            existing = session.exec(
+                select(User).where(User.email == row.email)
+            ).first()
+            if existing:
+                # Cross-tenant: never move membership via invite
+                if int(existing.tenant_id or 0) != int(row.tenant_id):
+                    raise AppError(
+                        "This email already belongs to another account",
+                        409,
+                        "EMAIL_IN_USE",
+                    )
+                raise ValidationError("User is already a member of this tenant")
+
+            if session.exec(select(User).where(User.username == username)).first():
+                raise ValidationError("Username already taken")
+
+            role = session.exec(
+                select(Role).where(Role.role_name == row.role, Role.is_active == True)
+            ).first()
+            if not role:
+                raise AppError("Invite role is not configured", 500, "SETUP")
+
+            user = User(
+                username=username,
+                email=row.email,
+                password=bcrypt.hash(password),
+                role_id=role.role_id,
+                tenant_id=row.tenant_id,
+                is_active=True,
+            )
+            session.add(user)
+            session.flush()
+            row.status = STATUS_ACCEPTED
+            row.updated_at = datetime.utcnow()
+            session.add(row)
+            write_audit(
+                session,
+                tenant_id=row.tenant_id,
+                actor_user_id=user.user_id,
+                action="tenant.invite.accept",
+                resource_type="tenant_invite",
+                resource_id=str(row.invite_id),
+                detail=row.email,
+            )
+            session.commit()
+            session.refresh(user)
+            return create_success_response(
+                {
+                    "success": True,
+                    "message": "Invite accepted — you can sign in",
+                    "user": {
+                        "userId": user.user_id,
+                        "username": user.username,
+                        "email": user.email,
+                        "tenantId": user.tenant_id,
+                        "roleName": role.role_name,
+                    },
+                    "tenant": {
+                        "tenantId": tenant.tenant_id,
+                        "name": tenant.name,
+                        "slug": tenant.slug,
+                    },
+                }
+            )

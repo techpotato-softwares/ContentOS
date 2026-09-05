@@ -103,6 +103,14 @@ class LambdaConstruct(Construct):
             "GEMINI_MODEL": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             "LINKEDIN_REDIRECT_URI": os.environ.get("LINKEDIN_REDIRECT_URI", ""),
             "LINKEDIN_FRONTEND_REDIRECT": os.environ.get("LINKEDIN_FRONTEND_REDIRECT", ""),
+            "FRONTEND_URL": os.environ.get("FRONTEND_URL", ""),
+            "SES_ENABLED": os.environ.get("SES_ENABLED", "false"),
+            "SES_FROM_EMAIL": os.environ.get(
+                "SES_FROM_EMAIL", os.environ.get("FROM_EMAIL", "")
+            ),
+            "FROM_EMAIL": os.environ.get(
+                "FROM_EMAIL", os.environ.get("SES_FROM_EMAIL", "")
+            ),
         }
         if config.environment == "dev":
             environment.update(_load_local_env_vars())

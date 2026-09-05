@@ -7,6 +7,8 @@ import { AgentPage } from "@/features/agent/AgentPage"
 import { ReviewPage } from "@/features/posts/ReviewPage"
 import { TrainingPage } from "@/features/training/TrainingPage"
 import { AdminTenantsPage } from "@/features/tenants/AdminTenantsPage"
+import { TeamInvitesPage } from "@/features/tenants/TeamInvitesPage"
+import { AcceptInvitePage } from "@/features/tenants/AcceptInvitePage"
 import { LinkedInPage } from "@/features/social/LinkedInPage"
 import { InsightsPage } from "@/features/insights/InsightsPage"
 import { AnalyticsPage } from "@/features/insights/AnalyticsPage"
@@ -21,6 +23,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route
         path="/"
         element={
@@ -36,12 +39,10 @@ export function AppRouter() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="settings/training" element={<TrainingPage />} />
+        <Route path="settings/team" element={<TeamInvitesPage />} />
         <Route path="connections/linkedin" element={<LinkedInPage />} />
         <Route path="admin/tenants" element={<AdminTenantsPage />} />
-        <Route
-          path="admin/tenants/:id/training"
-          element={<TrainingPage />}
-        />
+        <Route path="admin/tenants/:id/training" element={<TrainingPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

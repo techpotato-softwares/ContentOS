@@ -12,6 +12,7 @@ import {
   Palette,
   Lightbulb,
   BarChart3,
+  Users,
 } from "lucide-react"
 import { useAppDispatch, useAppSelector } from "@/app/hooks"
 import { logout } from "@/features/auth/authSlice"
@@ -29,6 +30,7 @@ const links = [
   { to: "/review", label: "Review", icon: ClipboardCheck },
   { to: "/connections/linkedin", label: "LinkedIn", icon: Share2 },
   { to: "/settings/training", label: "Training", icon: Palette },
+  { to: "/settings/team", label: "Team", icon: Users, tenantAdmin: true },
   { to: "/admin/tenants", label: "Tenants", icon: Building2, admin: true },
 ]
 
@@ -51,6 +53,10 @@ export function AppShell() {
   }, [theme, dispatch])
 
   const isAdmin = user?.roleName === "super_admin" || user?.permissions?.includes("admin:tenants")
+  const isTenantAdmin =
+    isAdmin ||
+    user?.roleName === "tenant_admin" ||
+    user?.permissions?.includes("tenant:admin")
   const title = brand?.appDisplayName || "ContentOS"
 
   return (
@@ -79,7 +85,11 @@ export function AppShell() {
         </div>
         <nav className="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto pr-0.5 -mr-0.5">
           {links
-            .filter((l) => !l.admin || isAdmin)
+            .filter((l) => {
+              if (l.admin) return isAdmin
+              if (l.tenantAdmin) return isTenantAdmin
+              return true
+            })
             .map((l) => (
               <NavLink
                 key={l.to}

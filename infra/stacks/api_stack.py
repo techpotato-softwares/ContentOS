@@ -196,6 +196,43 @@ class ApiStack(Stack):
                     )
                 )
 
+        # Tenants Lambda: invite emails via SES
+        tenants_fn = lambda_construct.functions.get("tenants")
+        if tenants_fn:
+            from aws_cdk import aws_iam as iam
+
+            tenants_fn.add_environment(
+                "SES_ENABLED", os.environ.get("SES_ENABLED", "true")
+            )
+            tenants_fn.add_environment(
+                "SES_FROM_EMAIL",
+                os.environ.get(
+                    "SES_FROM_EMAIL",
+                    os.environ.get("FROM_EMAIL", "noreply@contentos.app"),
+                ),
+            )
+            tenants_fn.add_environment(
+                "FROM_EMAIL",
+                os.environ.get(
+                    "FROM_EMAIL",
+                    os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app"),
+                ),
+            )
+            tenants_fn.add_environment(
+                "FRONTEND_URL",
+                os.environ.get(
+                    "FRONTEND_URL",
+                    f"https://{config.custom_domain}" if config.custom_domain else "",
+                ),
+            )
+            tenants_fn.add_to_role_policy(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["ses:SendEmail", "ses:SendRawEmail"],
+                    resources=["*"],
+                )
+            )
+
         print("\n🔐 Creating JWT secrets...")
         jwt_secrets = JwtSecretsConstruct(
             self, "JwtSecretsConstruct", config=config

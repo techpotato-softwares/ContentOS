@@ -169,6 +169,22 @@ class SocialAccount(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class TenantInvite(SQLModel, table=True):
+    """One-time team invite. ``token`` stores SHA-256 of the raw invite secret."""
+
+    __tablename__ = "tenant_invites"
+    invite_id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
+    email: str = Field(index=True)
+    role: str = Field(default="tenant_member", index=True)  # role_name, e.g. tenant_member
+    token: str = Field(unique=True, index=True)  # hashed raw token
+    expires_at: datetime = Field(index=True)
+    invited_by: Optional[int] = Field(default=None, foreign_key="users.user_id")
+    status: str = Field(default="pending", index=True)  # pending | accepted | revoked
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_logs"
     audit_id: Optional[int] = Field(default=None, primary_key=True)

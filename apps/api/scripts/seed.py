@@ -28,6 +28,7 @@ from database import init_db, get_session
 import database.models  # noqa: F401
 from database.models import Tenant, User, Role, Permission, RolePermission
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
+from utils.tenant_invites import ensure_invite_schema
 import json
 
 PERMS = [
@@ -55,6 +56,8 @@ ROLES = {
 
 def main():
     init_db()
+    with get_session() as _schema_session:
+        ensure_invite_schema(_schema_session)
     # Ensure newer columns exist on existing DBs
     try:
         from sqlalchemy import text

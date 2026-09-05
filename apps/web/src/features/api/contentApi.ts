@@ -233,12 +233,68 @@ export type AnalyticsInsights = {
 export const contentApi = createApi({
   reducerPath: "contentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights"],
+  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights", "Invites"],
   endpoints: (build) => ({
     getTheme: build.query<ThemePayload, void>({
       query: () => "/api/tenants/me/theme",
       transformResponse: (r: unknown) => unwrapData<ThemePayload>(r),
       providesTags: ["Theme"],
+    }),
+    listInvites: build.query<
+      {
+        inviteId: number
+        email: string
+        role: string
+        status: string
+        expiresAt?: string
+        invitedBy?: number
+        tenantId: number
+        createdAt?: string
+        tenantName?: string
+      }[],
+      void
+    >({
+      query: () => "/api/invites",
+      transformResponse: (r: unknown) => unwrapData(r),
+      providesTags: ["Invites"],
+    }),
+    createInvite: build.mutation<
+      {
+        inviteId: number
+        email: string
+        role: string
+        status: string
+        expiresAt?: string
+        tenantId: number
+        tenantName?: string
+        devLink?: string
+      },
+      { email: string; role: string }
+    >({
+      query: (body) => ({ url: "/api/invites", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Invites"],
+    }),
+    revokeInvite: build.mutation<{ revoked: boolean; inviteId: number }, number>({
+      query: (id) => ({ url: `/api/invites/${id}`, method: "DELETE" }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Invites"],
+    }),
+    acceptInvite: build.mutation<
+      {
+        success?: boolean
+        message: string
+        user?: { userId: number; username: string; email: string; tenantId?: number; roleName?: string }
+        tenant?: { tenantId: number; name: string; slug?: string }
+      },
+      { token: string; username: string; password: string }
+    >({
+      query: ({ token, ...body }) => ({
+        url: `/api/invites/${encodeURIComponent(token)}/accept`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
     }),
     listTenants: build.query<TenantRow[], void>({
       query: () => "/api/admin/tenants",
@@ -567,6 +623,10 @@ export const contentApi = createApi({
 
 export const {
   useGetThemeQuery,
+  useListInvitesQuery,
+  useCreateInviteMutation,
+  useRevokeInviteMutation,
+  useAcceptInviteMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
   useGetTrainingQuery,
