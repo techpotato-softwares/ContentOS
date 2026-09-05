@@ -697,6 +697,12 @@ class PublishingController:
         tid = resolve_tenant_id(user)
         data = data or {}
         with get_session() as session:
+            from utils.auth_tokens import ensure_auth_schema, require_email_verified
+            from database.models import User as UserModel
+
+            ensure_auth_schema(session)
+            actor = session.get(UserModel, int((user or {}).get("userId") or 0))
+            require_email_verified(actor)
             post = session.get(ContentPost, int(id))
             if not post or post.tenant_id != tid:
                 raise NotFoundError("Post not found")
@@ -794,6 +800,12 @@ class PublishingController:
         tid = resolve_tenant_id(user)
         data = data or {}
         with get_session() as session:
+            from utils.auth_tokens import ensure_auth_schema, require_email_verified
+            from database.models import User as UserModel
+
+            ensure_auth_schema(session)
+            actor = session.get(UserModel, int((user or {}).get("userId") or 0))
+            require_email_verified(actor)
             post = session.get(ContentPost, int(id))
             if not post or post.tenant_id != tid:
                 raise NotFoundError("Post not found")

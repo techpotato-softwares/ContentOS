@@ -6,6 +6,17 @@ type LoginResponse = {
   accessToken: string
   refreshToken: string
   user: AuthUser
+  emailVerificationRequired?: boolean
+  devLink?: string
+}
+
+type MessageResponse = {
+  success?: boolean
+  message: string
+  devLink?: string
+  accessToken?: string
+  refreshToken?: string
+  user?: AuthUser
 }
 
 export const authApi = createApi({
@@ -17,13 +28,64 @@ export const authApi = createApi({
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),
     register: build.mutation<
-      LoginResponse & { tenant?: { tenantId: number; name: string } },
+      LoginResponse & { tenant?: { tenantId: number; name: string; slug?: string } },
       { username: string; email: string; password: string; companyName: string }
     >({
-      query: (body) => ({ url: "/api/register", method: "POST", body }),
+      query: (body) => ({
+        url: "/api/register",
+        method: "POST",
+        body: {
+          username: body.username,
+          email: body.email,
+          password: body.password,
+          companyName: body.companyName,
+        },
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    requestEmailVerification: build.mutation<MessageResponse, { email: string }>({
+      query: (body) => ({
+        url: "/api/auth/verify-email/request",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    confirmEmailVerification: build.mutation<MessageResponse, { token: string }>({
+      query: (body) => ({
+        url: "/api/auth/verify-email/confirm",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    requestPasswordReset: build.mutation<MessageResponse, { email: string }>({
+      query: (body) => ({
+        url: "/api/auth/password-reset/request",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    confirmPasswordReset: build.mutation<
+      MessageResponse,
+      { token: string; password: string }
+    >({
+      query: (body) => ({
+        url: "/api/auth/password-reset/confirm",
+        method: "POST",
+        body,
+      }),
       transformResponse: (r: unknown) => unwrapData(r),
     }),
   }),
 })
 
-export const { useLoginMutation, useRegisterMutation } = authApi
+export const {
+  useLoginMutation,
+  useRegisterMutation,
+  useRequestEmailVerificationMutation,
+  useConfirmEmailVerificationMutation,
+  useRequestPasswordResetMutation,
+  useConfirmPasswordResetMutation,
+} = authApi

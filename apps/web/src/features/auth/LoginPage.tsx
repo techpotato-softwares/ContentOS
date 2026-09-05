@@ -7,27 +7,50 @@ import { useAppDispatch } from "@/app/hooks"
 import { Button } from "@/components/ui/button"
 import { Input, Label } from "@/components/ui/input"
 
+function apiErrorMessage(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined
+  const e = err as {
+    status?: number | string
+    data?: { error?: { message?: string }; message?: string }
+  }
+  return e.data?.error?.message || e.data?.message
+}
+
 export function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [email, setEmail] = useState("")
   const [companyName, setCompanyName] = useState("")
+  const [formError, setFormError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
   const [login, loginState] = useLoginMutation()
   const [register, registerState] = useRegisterMutation()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const error =
-    (loginState.error as { data?: { error?: { message?: string } } })?.data?.error?.message ||
-    (registerState.error as { data?: { error?: { message?: string } } })?.data?.error?.message
+    formError ||
+    apiErrorMessage(loginState.error) ||
+    apiErrorMessage(registerState.error)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError(null)
+    setInfo(null)
+    if (mode === "register" && !companyName.trim()) {
+      setFormError("Company name is required.")
+      return
+    }
     try {
       const res =
         mode === "login"
           ? await login({ username, password }).unwrap()
-          : await register({ username, email, password, companyName }).unwrap()
+          : await register({
+              username,
+              email: email.trim(),
+              password,
+              companyName: companyName.trim(),
+            }).unwrap()
       dispatch(
         setSession({
           accessToken: res.accessToken,
@@ -35,9 +58,17 @@ export function LoginPage() {
           user: res.user,
         }),
       )
-      navigate("/dashboard")
-    } catch {
-      /* shown via error */
+      if (mode === "register" || res.user?.emailVerified === false) {
+        setInfo(
+          res.devLink
+            ? "Account created. Check your email to verify (dev link also returned locally)."
+            : "Account ready. Verify your email to unlock publishing.",
+        )
+      }
+      navigate("/agent")
+    } catch (err) {
+      const msg = apiErrorMessage(err)
+      if (msg) setFormError(msg)
     }
   }
 
@@ -60,7 +91,11 @@ export function LoginPage() {
             type="button"
             variant={mode === "login" ? "default" : "outline"}
             className="flex-1"
-            onClick={() => setMode("login")}
+            onClick={() => {
+              setMode("login")
+              setFormError(null)
+              setInfo(null)
+            }}
           >
             Login
           </Button>
@@ -68,7 +103,11 @@ export function LoginPage() {
             type="button"
             variant={mode === "register" ? "default" : "outline"}
             className="flex-1"
-            onClick={() => setMode("register")}
+            onClick={() => {
+              setMode("register")
+              setFormError(null)
+              setInfo(null)
+            }}
           >
             Register company
           </Button>
@@ -77,17 +116,33 @@ export function LoginPage() {
           <>
             <div className="space-y-1">
               <Label>Company name</Label>
-              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} required />
+              <Input
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                required
+                autoComplete="organization"
+              />
             </div>
             <div className="space-y-1">
-              <Label>Email</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Label>Work email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
             </div>
           </>
         )}
         <div className="space-y-1">
           <Label>Username</Label>
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} required />
+          <Input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            autoComplete="username"
+          />
         </div>
         <div className="space-y-1">
           <Label>Password</Label>
@@ -96,19 +151,30 @@ export function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
           />
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button type="submit" className="w-full" disabled={loginState.isLoading || registerState.isLoading}>
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+        {info && <p className="text-sm text-primary">{info}</p>}
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={loginState.isLoading || registerState.isLoading}
+        >
           {mode === "login" ? "Sign in" : "Create account"}
         </Button>
-        <p className="text-xs text-muted-foreground">
-          Seed users: <code>superadmin</code> / <code>demo</code> — password{" "}
-          <code>ChangeMe123!</code>
-        </p>
-        <Link to="/" className="text-xs text-primary">
-          Home
-        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <Link to="/forgot-password" className="text-primary hover:underline">
+            Forgot password?
+          </Link>
+          <Link to="/verify-email" className="text-primary hover:underline">
+            Verify email
+          </Link>
+        </div>
       </motion.form>
     </div>
   )

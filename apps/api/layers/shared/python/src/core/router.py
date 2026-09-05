@@ -14,6 +14,10 @@ PUBLIC = {
     ("POST", "/api/login"),
     ("POST", "/api/auth/refresh"),
     ("POST", "/api/register"),
+    ("POST", "/api/auth/verify-email/request"),
+    ("POST", "/api/auth/verify-email/confirm"),
+    ("POST", "/api/auth/password-reset/request"),
+    ("POST", "/api/auth/password-reset/confirm"),
     ("GET", "/api/social/linkedin/callback"),
 }
 
