@@ -38,3 +38,7 @@ infra/.cdk.staging/
 
 # Logs
 *.log
+
+# Next.js build artifacts
+**/.next/
+**/out/
