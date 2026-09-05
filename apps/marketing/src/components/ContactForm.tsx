@@ -36,7 +36,7 @@ export function ContactForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="glass-card rounded-2xl border border-[var(--line)] p-6 md:p-8"
+      className="glass-card rounded-2xl border border-(--line) p-6 md:p-8"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

@@ -4,6 +4,7 @@ import json
 import re
 import secrets
 from passlib.hash import bcrypt
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from decorators import Controller, Post, Get
@@ -85,6 +86,66 @@ def _token_payload(user: User, role: Role | None, permissions: list[str], module
     }
 
 
+def _unique_index_names_for_columns(table, column_names: set[str]) -> frozenset[str]:
+    """Resolve unique index/constraint names from SQLAlchemy metadata (no hard-coded guesses)."""
+    names: set[str] = set()
+    cols = {table.c[n] for n in column_names if n in table.c}
+    for idx in table.indexes:
+        if idx.unique and idx.name and cols.intersection(idx.columns):
+            names.add(idx.name)
+    for cst in table.constraints:
+        if isinstance(cst, UniqueConstraint) and cst.name:
+            cst_cols = set(cst.columns)
+            if cols.intersection(cst_cols):
+                names.add(cst.name)
+    return frozenset(names)
+
+
+# Resolved from models: Field(unique=True) → ix_users_email / ix_users_username
+_USER_IDENTITY_CONSTRAINTS = _unique_index_names_for_columns(
+    User.__table__, {"email", "username"}
+)
+
+
+def _integrity_constraint_name(exc: IntegrityError) -> str | None:
+    """Best-effort PostgreSQL constraint/index name from IntegrityError."""
+    orig = getattr(exc, "orig", None)
+    if orig is None:
+        return None
+    diag = getattr(orig, "diag", None)
+    if diag is not None:
+        name = getattr(diag, "constraint_name", None)
+        if name:
+            return str(name)
+    # Some drivers expose constraint on the exception itself
+    name = getattr(orig, "constraint_name", None)
+    return str(name) if name else None
+
+
+def _is_user_identity_unique_violation(exc: IntegrityError) -> bool:
+    """True only for users.email / users.username uniqueness — not slug/RBAC/other."""
+    constraint = _integrity_constraint_name(exc)
+    if constraint and constraint in _USER_IDENTITY_CONSTRAINTS:
+        return True
+
+    # SQLite (and some drivers): "UNIQUE constraint failed: users.email"
+    msg = str(getattr(exc, "orig", None) or exc).lower()
+    if "users.email" in msg or "users.username" in msg:
+        return True
+
+    # PostgreSQL unique_violation without a matching constraint name → not a user conflict
+    # (e.g. tenants.slug, roles.role_name, permissions.permission_code, unknown)
+    return False
+
+
+def _user_conflict_from_integrity(exc: IntegrityError) -> ConflictError | None:
+    if _is_user_identity_unique_violation(exc):
+        return ConflictError(
+            "An account with this email or username already exists."
+        )
+    return None
+
+
 def _slugify(company_name: str) -> str:
     raw = (company_name or "").lower().strip()
     slug = re.sub(r"[^a-z0-9]+", "-", raw)
@@ -107,27 +168,47 @@ def _unique_tenant_slug(session, company_name: str, preferred: str | None = None
 
 
 def _ensure_platform_rbac(session) -> Role:
-    """Idempotently create permissions + roles; return tenant_admin for membership."""
+    """Idempotently create permissions + roles; return tenant_admin for membership.
+
+    Concurrent signup uses SAVEPOINTs so unique races on roles/permissions do not
+    abort the outer registration transaction.
+    """
     perm_map: dict[str, int] = {}
     for code, name in _PERMS:
         existing = session.exec(
             select(Permission).where(Permission.permission_code == code)
         ).first()
         if not existing:
-            existing = Permission(
-                permission_code=code, permission_name=name, description=name
-            )
-            session.add(existing)
-            session.flush()
+            try:
+                with session.begin_nested():
+                    existing = Permission(
+                        permission_code=code, permission_name=name, description=name
+                    )
+                    session.add(existing)
+                    session.flush()
+            except IntegrityError:
+                existing = session.exec(
+                    select(Permission).where(Permission.permission_code == code)
+                ).first()
+                if not existing:
+                    raise
         perm_map[code] = existing.permission_id  # type: ignore[assignment]
 
     tenant_admin: Role | None = None
     for role_name, codes in _ROLES.items():
         role = session.exec(select(Role).where(Role.role_name == role_name)).first()
         if not role:
-            role = Role(role_name=role_name, description=role_name)
-            session.add(role)
-            session.flush()
+            try:
+                with session.begin_nested():
+                    role = Role(role_name=role_name, description=role_name)
+                    session.add(role)
+                    session.flush()
+            except IntegrityError:
+                role = session.exec(
+                    select(Role).where(Role.role_name == role_name)
+                ).first()
+                if not role:
+                    raise
         for code in codes:
             pid = perm_map[code]
             rp = session.exec(
@@ -137,7 +218,15 @@ def _ensure_platform_rbac(session) -> Role:
                 )
             ).first()
             if not rp:
-                session.add(RolePermission(role_id=role.role_id, permission_id=pid))
+                try:
+                    with session.begin_nested():
+                        session.add(
+                            RolePermission(role_id=role.role_id, permission_id=pid)
+                        )
+                        session.flush()
+                except IntegrityError:
+                    # Concurrent insert of the same link — safe to ignore
+                    pass
         if role_name == "tenant_admin":
             tenant_admin = role
 
@@ -229,7 +318,7 @@ class AuthController:
         body = data or {}
         username = (body.get("username") or "").strip()
         email = (body.get("email") or "").strip().lower()
-        password = body.get("password") or ""
+        password = body.get("password")
         company_name = (
             body.get("companyName") or body.get("company_name") or ""
         ).strip()
@@ -237,8 +326,10 @@ class AuthController:
             raise ValidationError("username is required")
         if not email:
             raise ValidationError("email is required")
-        if not password:
+        if password is None or not isinstance(password, str) or password == "":
             raise ValidationError("password is required")
+        if len(password) < 8:
+            raise ValidationError("password must be at least 8 characters")
         if not company_name:
             raise ValidationError("companyName is required")
 
@@ -324,12 +415,14 @@ class AuthController:
             except (ConflictError, ValidationError, AppError):
                 session.rollback()
                 raise
-            except IntegrityError:
+            except IntegrityError as e:
                 session.rollback()
-                # Unique violations → human-readable 409, never a stack trace
-                raise ConflictError(
-                    "An account with this email or username already exists."
-                )
+                # Only map users.email / users.username unique violations to 409.
+                # Slug/RBAC/unknown integrity errors must not look like "email taken".
+                conflict = _user_conflict_from_integrity(e)
+                if conflict is not None:
+                    raise conflict
+                raise
             except Exception:
                 session.rollback()
                 raise

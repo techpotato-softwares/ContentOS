@@ -171,6 +171,269 @@ def test_duplicate_email_returns_409(db_session):
     assert "Traceback" not in err["message"]
 
 
+def test_duplicate_username_returns_409(db_session):
+    ctrl = AuthController()
+    username = _unique("sameuser")
+    _register(ctrl, username=username, email=f"{_unique('a')}@example.com")
+    with pytest.raises(ConflictError) as exc:
+        _register(
+            ctrl,
+            username=username,
+            email=f"{_unique('b')}@example.com",
+            companyName="Other Co",
+        )
+    assert exc.value.status_code == 409
+    assert "username" in exc.value.message.lower()
+
+
+def test_integrity_email_unique_maps_to_409():
+    """PostgreSQL-style users.email unique violation → same 409 message."""
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    mock_exc = IntegrityError(
+        "INSERT INTO users",
+        {},
+        type(
+            "O",
+            (),
+            {
+                "pgcode": "23505",
+                "diag": type("D", (), {"constraint_name": "ix_users_email"})(),
+            },
+        )(),
+    )
+    conflict = ac._user_conflict_from_integrity(mock_exc)
+    assert conflict is not None
+    assert conflict.status_code == 409
+    assert conflict.message == "An account with this email or username already exists."
+
+
+def test_integrity_sqlite_users_email_message_maps_to_409():
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    mock_exc = IntegrityError(
+        "INSERT",
+        {},
+        Exception("UNIQUE constraint failed: users.email"),
+    )
+    conflict = ac._user_conflict_from_integrity(mock_exc)
+    assert conflict is not None
+    assert conflict.status_code == 409
+
+
+def test_integrity_username_unique_maps_to_409():
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    mock_exc = IntegrityError(
+        "INSERT",
+        {},
+        type(
+            "O",
+            (),
+            {
+                "pgcode": "23505",
+                "diag": type("D", (), {"constraint_name": "ix_users_username"})(),
+            },
+        )(),
+    )
+    conflict = ac._user_conflict_from_integrity(mock_exc)
+    assert conflict is not None
+    assert conflict.status_code == 409
+
+
+def test_integrity_rbac_unique_not_409():
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    for name in ("ix_permissions_permission_code", "ix_roles_role_name"):
+        mock_exc = IntegrityError(
+            "INSERT",
+            {},
+            type(
+                "O",
+                (),
+                {"pgcode": "23505", "diag": type("D", (), {"constraint_name": name})()},
+            )(),
+        )
+        assert ac._user_conflict_from_integrity(mock_exc) is None
+
+
+def test_integrity_tenant_slug_unique_not_409():
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    mock_exc = IntegrityError(
+        "INSERT",
+        {},
+        type(
+            "O",
+            (),
+            {
+                "pgcode": "23505",
+                "diag": type("D", (), {"constraint_name": "ix_tenants_slug"})(),
+            },
+        )(),
+    )
+    assert ac._user_conflict_from_integrity(mock_exc) is None
+
+
+def test_integrity_unknown_not_409():
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    mock_exc = IntegrityError(
+        "INSERT",
+        {},
+        type(
+            "O",
+            (),
+            {
+                "pgcode": "23505",
+                "diag": type("D", (), {"constraint_name": "uq_something_else"})(),
+            },
+        )(),
+    )
+    assert ac._user_conflict_from_integrity(mock_exc) is None
+
+    bare = IntegrityError("INSERT", {}, Exception("connection reset"))
+    assert ac._user_conflict_from_integrity(bare) is None
+
+
+def test_register_slug_integrity_error_not_mapped_to_409(db_session):
+    """If tenants.slug unique fires, register must not return ConflictError 409."""
+    ctrl = AuthController()
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    slug_exc = IntegrityError(
+        "INSERT INTO tenants",
+        {},
+        type(
+            "O",
+            (),
+            {
+                "pgcode": "23505",
+                "diag": type("D", (), {"constraint_name": "ix_tenants_slug"})(),
+            },
+        )(),
+    )
+
+    calls = {"n": 0}
+    original_ensure = ac._ensure_platform_rbac
+
+    def ensure_then_fail(session):
+        role = original_ensure(session)
+        real_flush = session.flush
+
+        def flusher(*a, **k):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise slug_exc
+            return real_flush(*a, **k)
+
+        session.flush = flusher  # type: ignore[method-assign]
+        return role
+
+    with patch.object(ac, "_ensure_platform_rbac", side_effect=ensure_then_fail):
+        with pytest.raises(IntegrityError) as exc:
+            ctrl.register(
+                {
+                    "username": _unique("slugrace"),
+                    "email": f"{_unique('slug')}@example.com",
+                    "password": "SecurePass123!",
+                    "companyName": f"Slug Race {_unique('c')}",
+                }
+            )
+        assert not isinstance(exc.value, ConflictError)
+        assert ac._user_conflict_from_integrity(exc.value) is None
+
+
+def test_register_rbac_integrity_error_not_mapped_to_409(db_session):
+    ctrl = AuthController()
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    rbac_exc = IntegrityError(
+        "INSERT INTO permissions",
+        {},
+        type(
+            "O",
+            (),
+            {
+                "pgcode": "23505",
+                "diag": type(
+                    "D", (), {"constraint_name": "ix_permissions_permission_code"}
+                )(),
+            },
+        )(),
+    )
+
+    with patch.object(ac, "_ensure_platform_rbac", side_effect=rbac_exc):
+        with pytest.raises(IntegrityError) as exc:
+            ctrl.register(
+                {
+                    "username": _unique("rbac"),
+                    "email": f"{_unique('rbac')}@example.com",
+                    "password": "SecurePass123!",
+                    "companyName": f"RBAC {_unique('c')}",
+                }
+            )
+        assert ac._user_conflict_from_integrity(exc.value) is None
+
+
+def test_register_user_email_integrity_maps_to_409(db_session):
+    """IntegrityError on users.email during register → ConflictError (not raw IntegrityError)."""
+    ctrl = AuthController()
+    from modules.platform.src.controllers import auth_controller as ac
+    from sqlalchemy.exc import IntegrityError
+
+    email_exc = IntegrityError(
+        "INSERT INTO users",
+        {},
+        type(
+            "O",
+            (),
+            {
+                "pgcode": "23505",
+                "diag": type("D", (), {"constraint_name": "ix_users_email"})(),
+            },
+        )(),
+    )
+
+    original_ensure = ac._ensure_platform_rbac
+    calls = {"n": 0}
+
+    def ensure_then_fail_on_user(session):
+        role = original_ensure(session)
+        real_flush = session.flush
+
+        def flusher(*a, **k):
+            calls["n"] += 1
+            # 1 = tenant flush, 2 = user flush
+            if calls["n"] >= 2:
+                raise email_exc
+            return real_flush(*a, **k)
+
+        session.flush = flusher  # type: ignore[method-assign]
+        return role
+
+    with patch.object(ac, "_ensure_platform_rbac", side_effect=ensure_then_fail_on_user):
+        with pytest.raises(ConflictError) as exc:
+            ctrl.register(
+                {
+                    "username": _unique("emailrace"),
+                    "email": f"{_unique('emailrace')}@example.com",
+                    "password": "SecurePass123!",
+                    "companyName": f"Email Race {_unique('c')}",
+                }
+            )
+        assert exc.value.status_code == 409
+        assert exc.value.message == "An account with this email or username already exists."
+
+
 def test_missing_company_name_validation(db_session):
     ctrl = AuthController()
     with pytest.raises(ValidationError) as exc:
@@ -183,6 +446,58 @@ def test_missing_company_name_validation(db_session):
         )
     assert exc.value.status_code == 400
     assert "companyName" in exc.value.message
+
+
+def test_register_rejects_empty_password(db_session):
+    ctrl = AuthController()
+    for pwd in (None, ""):
+        with pytest.raises(ValidationError) as exc:
+            ctrl.register(
+                {
+                    "username": _unique("pw"),
+                    "email": f"{_unique('pw')}@example.com",
+                    "password": pwd,
+                    "companyName": f"Co {_unique('c')}",
+                }
+            )
+        assert exc.value.status_code == 400
+        assert exc.value.message == "password is required"
+
+
+def test_register_rejects_short_passwords(db_session):
+    ctrl = AuthController()
+    for pwd in ("a", "1234567"):
+        with pytest.raises(ValidationError) as exc:
+            ctrl.register(
+                {
+                    "username": _unique("short"),
+                    "email": f"{_unique('short')}@example.com",
+                    "password": pwd,
+                    "companyName": f"Co {_unique('c')}",
+                }
+            )
+        assert exc.value.status_code == 400
+        assert exc.value.message == "password must be at least 8 characters"
+        # Must not echo the submitted password (beyond accidental substring overlap)
+        if len(pwd) > 1:
+            assert pwd not in exc.value.message
+
+
+def test_register_accepts_eight_char_password(db_session):
+    ctrl = AuthController()
+    payload, resp = _register(ctrl, password="12345678")
+    assert resp["statusCode"] == 201
+    login = ctrl.login({"username": payload["email"], "password": "12345678"})
+    assert login["statusCode"] == 200
+
+
+def test_register_accepts_strong_password(db_session):
+    ctrl = AuthController()
+    strong = "SecurePass123!"
+    payload, resp = _register(ctrl, password=strong)
+    assert resp["statusCode"] == 201
+    login = ctrl.login({"username": payload["email"], "password": strong})
+    assert login["statusCode"] == 200
 
 
 def test_registration_failure_rolls_back_no_orphans(db_session):
