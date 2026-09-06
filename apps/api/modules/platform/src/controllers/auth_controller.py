@@ -150,6 +150,21 @@ class AuthController:
                 training_json=training.model_dump_json(),
                 ui_mode="platform",
                 app_display_name=company_name,
+                onboarding_json=json.dumps(
+                    {
+                        "version": 1,
+                        "status": "pending",
+                        "steps": {
+                            "linkedin": False,
+                            "training": False,
+                            "generate": False,
+                            "publish": False,
+                        },
+                        "skippedAt": None,
+                        "completedAt": None,
+                        "updatedAt": None,
+                    }
+                ),
             )
             session.add(tenant)
             session.commit()

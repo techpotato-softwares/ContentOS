@@ -433,6 +433,9 @@ class PublishingController:
                     resource_type="social_account",
                     resource_id=str(tid),
                 )
+                from utils.onboarding import mark_onboarding_step
+
+                mark_onboarding_step(session, tenant_id=tid, step="linkedin")
                 session.commit()
                 loc = cfg["frontend_redirect"] + "?linkedin=select_page"
             else:
@@ -457,6 +460,9 @@ class PublishingController:
                     resource_type="social_account",
                     resource_id=str(tid),
                 )
+                from utils.onboarding import mark_onboarding_step
+
+                mark_onboarding_step(session, tenant_id=tid, step="linkedin")
                 session.commit()
                 loc = cfg["frontend_redirect"] + "?linkedin=connected&mode=member"
 
@@ -551,6 +557,9 @@ class PublishingController:
                 resource_id=org_id,
                 detail=name,
             )
+            from utils.onboarding import mark_onboarding_step
+
+            mark_onboarding_step(session, tenant_id=tid, step="linkedin")
             session.commit()
             session.refresh(acct)
             return create_success_response(_account_status(acct))
@@ -781,6 +790,9 @@ class PublishingController:
                 resource_id=str(post.post_id),
                 detail=json.dumps({"linkedinId": linkedin_id, "publishAs": kind, "format": fmt}),
             )
+            from utils.onboarding import mark_onboarding_step
+
+            mark_onboarding_step(session, tenant_id=tid, step="publish")
             session.commit()
             session.refresh(post)
             return create_success_response(_post_dict(post))

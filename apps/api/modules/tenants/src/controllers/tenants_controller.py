@@ -20,6 +20,8 @@ from training.schema import (
 
 
 def _tenant_dict(t: Tenant) -> dict:
+    from utils.onboarding import parse_onboarding, public_onboarding
+
     return {
         "tenantId": t.tenant_id,
         "name": t.name,
@@ -33,6 +35,7 @@ def _tenant_dict(t: Tenant) -> dict:
         "contextPackVersion": t.context_pack_version,
         "isActive": t.is_active,
         "modulesEnabled": json.loads(t.modules_enabled or "[]"),
+        "onboarding": public_onboarding(parse_onboarding(t)),
     }
 
 
@@ -109,6 +112,21 @@ class TenantsController:
                 training_json=training.model_dump_json(),
                 ui_mode="platform",
                 app_display_name=name,
+                onboarding_json=json.dumps(
+                    {
+                        "version": 1,
+                        "status": "pending",
+                        "steps": {
+                            "linkedin": False,
+                            "training": False,
+                            "generate": False,
+                            "publish": False,
+                        },
+                        "skippedAt": None,
+                        "completedAt": None,
+                        "updatedAt": None,
+                    }
+                ),
             )
             session.add(t)
             session.commit()
@@ -204,6 +222,9 @@ class TenantsController:
                 resource_type="tenant",
                 resource_id=str(tid),
             )
+            from utils.onboarding import mark_onboarding_step
+
+            mark_onboarding_step(session, tenant_id=tid, step="training")
             session.commit()
             return create_success_response(
                 {"training": training.model_dump(), "contextPackVersion": t.context_pack_version, "packPreviewLen": len(pack)}
@@ -454,3 +475,91 @@ class TenantsController:
                 _rebuild_pack(session, t)
             session.commit()
             return create_success_response({"deleted": True})
+
+    @Get("/tenants/me/onboarding")
+    @RequireModule("tenants")
+    @RequirePermission("agent:chat", "tenant:admin", "training:manage", "admin:tenants")
+    def get_onboarding(self, user=None, query: dict | None = None):
+        from utils.onboarding import (
+            ensure_onboarding_schema,
+            get_or_init_onboarding,
+            public_onboarding,
+        )
+
+        q = query or {}
+        requested = int(q["tenantId"]) if q.get("tenantId") else None
+        tid = resolve_tenant_id(user, requested)
+        with get_session() as session:
+            ensure_onboarding_schema()
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            state = get_or_init_onboarding(session, t)
+            session.commit()
+            return create_success_response(public_onboarding(state))
+
+    @Post("/tenants/me/onboarding/skip")
+    @RequireModule("tenants")
+    @RequirePermission("agent:chat", "tenant:admin", "training:manage", "admin:tenants")
+    def skip_onboarding_endpoint(self, user=None, query: dict | None = None):
+        from utils.onboarding import ensure_onboarding_schema, public_onboarding, skip_onboarding
+
+        q = query or {}
+        requested = int(q["tenantId"]) if q.get("tenantId") else None
+        tid = resolve_tenant_id(user, requested)
+        with get_session() as session:
+            ensure_onboarding_schema()
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            state = skip_onboarding(session, t)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=(user or {}).get("userId"),
+                action="onboarding.skip",
+                resource_type="tenant",
+                resource_id=str(tid),
+            )
+            session.commit()
+            return create_success_response(public_onboarding(state))
+
+    @Post("/tenants/me/onboarding/steps/{step}/complete")
+    @RequireModule("tenants")
+    @RequirePermission("agent:chat", "tenant:admin", "training:manage", "admin:tenants")
+    def complete_onboarding_step(self, step: str, user=None, query: dict | None = None):
+        """Mark a wizard step complete only when backend facts prove success."""
+        from utils.onboarding import (
+            ONBOARDING_STEPS,
+            ensure_onboarding_schema,
+            mark_onboarding_step,
+            public_onboarding,
+            verify_step_complete,
+        )
+
+        if step not in ONBOARDING_STEPS:
+            raise ValidationError(f"Unknown onboarding step: {step}")
+        q = query or {}
+        requested = int(q["tenantId"]) if q.get("tenantId") else None
+        tid = resolve_tenant_id(user, requested)
+        with get_session() as session:
+            ensure_onboarding_schema()
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            if not verify_step_complete(session, t, step):
+                raise ValidationError(
+                    f"Cannot mark '{step}' complete — required action not finished yet"
+                )
+            state = mark_onboarding_step(session, tenant_id=tid, step=step) or {}
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=(user or {}).get("userId"),
+                action=f"onboarding.step.{step}",
+                resource_type="tenant",
+                resource_id=str(tid),
+            )
+            session.commit()
+            return create_success_response(public_onboarding(state))
+

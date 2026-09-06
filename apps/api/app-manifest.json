@@ -32,7 +32,10 @@
         { "method": "POST", "path": "/api/admin/tenants/{tenantId}/brand/logo", "controller": "TenantsController", "action": "admin_upload_logo" },
         { "method": "GET", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "list_docs" },
         { "method": "POST", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "create_doc" },
-        { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" }
+        { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" },
+        { "method": "GET", "path": "/api/tenants/me/onboarding", "controller": "TenantsController", "action": "get_onboarding" },
+        { "method": "POST", "path": "/api/tenants/me/onboarding/skip", "controller": "TenantsController", "action": "skip_onboarding_endpoint" },
+        { "method": "POST", "path": "/api/tenants/me/onboarding/steps/{step}/complete", "controller": "TenantsController", "action": "complete_onboarding_step" }
       ]
     },
     "agent": {

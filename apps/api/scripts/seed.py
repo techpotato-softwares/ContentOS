@@ -75,6 +75,14 @@ def main():
                     )
                 except Exception:
                     pass
+            try:
+                conn.execute(
+                    text(
+                        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS onboarding_json TEXT DEFAULT '{}'"
+                    )
+                )
+            except Exception:
+                pass
             for col, typ in [
                 ("account_kind", "VARCHAR DEFAULT 'member'"),
                 ("author_urn", "VARCHAR"),

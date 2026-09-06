@@ -698,6 +698,9 @@ class AgentController:
                 resource_id=str(batch.batch_id),
                 detail=json.dumps({"brief": brief[:400], "format": post_format}),
             )
+            from utils.onboarding import mark_onboarding_step
+
+            mark_onboarding_step(session, tenant_id=tid, step="generate")
             session.commit()
             for p in posts:
                 session.refresh(p)

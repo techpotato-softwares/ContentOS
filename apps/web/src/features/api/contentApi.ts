@@ -233,12 +233,61 @@ export type AnalyticsInsights = {
 export const contentApi = createApi({
   reducerPath: "contentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights"],
+  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights", "Onboarding"],
   endpoints: (build) => ({
     getTheme: build.query<ThemePayload, void>({
       query: () => "/api/tenants/me/theme",
       transformResponse: (r: unknown) => unwrapData<ThemePayload>(r),
       providesTags: ["Theme"],
+    }),
+    getOnboarding: build.query<
+      {
+        version: number
+        status: "pending" | "completed" | "skipped"
+        steps: {
+          linkedin: boolean
+          training: boolean
+          generate: boolean
+          publish: boolean
+        }
+        skippedAt?: string | null
+        completedAt?: string | null
+        updatedAt?: string | null
+        visible: boolean
+        stepOrder: string[]
+      },
+      void
+    >({
+      query: () => "/api/tenants/me/onboarding",
+      transformResponse: (r: unknown) => unwrapData(r),
+      providesTags: ["Onboarding"],
+    }),
+    skipOnboarding: build.mutation<
+      {
+        status: string
+        visible: boolean
+        steps: Record<string, boolean>
+      },
+      void
+    >({
+      query: () => ({ url: "/api/tenants/me/onboarding/skip", method: "POST" }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Onboarding"],
+    }),
+    completeOnboardingStep: build.mutation<
+      {
+        status: string
+        visible: boolean
+        steps: Record<string, boolean>
+      },
+      string
+    >({
+      query: (step) => ({
+        url: `/api/tenants/me/onboarding/steps/${step}/complete`,
+        method: "POST",
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Onboarding"],
     }),
     listTenants: build.query<TenantRow[], void>({
       query: () => "/api/admin/tenants",
@@ -269,7 +318,7 @@ export const contentApi = createApi({
         method: "PUT",
         body,
       }),
-      invalidatesTags: ["Training", "Theme"],
+      invalidatesTags: ["Training", "Theme", "Onboarding"],
     }),
     uploadLogo: build.mutation<
       { logoUrl: string; training?: TenantTrainingSchema },
@@ -362,7 +411,7 @@ export const contentApi = createApi({
     >({
       query: (body) => ({ url: "/api/agent/generate", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts", "Sessions"],
+      invalidatesTags: ["Posts", "Sessions", "Onboarding"],
     }),
     scorePost: build.mutation<ContentPost, number>({
       query: (id) => ({ url: `/api/agent/posts/${id}/score`, method: "POST" }),
@@ -481,7 +530,7 @@ export const contentApi = createApi({
         return { url: `/api/posts/${id}/publish`, method: "POST", body }
       },
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts"],
+      invalidatesTags: ["Posts", "Onboarding"],
     }),
     quickPublishPost: build.mutation<
       ContentPost,
@@ -494,7 +543,7 @@ export const contentApi = createApi({
         return { url: `/api/posts/${id}/quick-publish`, method: "POST", body }
       },
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts"],
+      invalidatesTags: ["Posts", "Onboarding"],
     }),
     linkedInStatus: build.query<LinkedInStatus, { tenantId?: number } | void>({
       query: (arg) => {
@@ -548,7 +597,7 @@ export const contentApi = createApi({
         body,
       }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["LinkedIn"],
+      invalidatesTags: ["LinkedIn", "Onboarding"],
     }),
     linkedInDisconnect: build.mutation<
       { disconnected: boolean; accountKind: string },
@@ -567,6 +616,9 @@ export const contentApi = createApi({
 
 export const {
   useGetThemeQuery,
+  useGetOnboardingQuery,
+  useSkipOnboardingMutation,
+  useCompleteOnboardingStepMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
   useGetTrainingQuery,

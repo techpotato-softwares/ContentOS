@@ -17,6 +17,7 @@ import { useAppDispatch, useAppSelector } from "@/app/hooks"
 import { logout } from "@/features/auth/authSlice"
 import { setColorMode, setBrand } from "@/app/theme/themeSlice"
 import { useGetThemeQuery } from "@/features/api/contentApi"
+import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard"
 import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/shared/lib/utils"
@@ -149,6 +150,7 @@ export function AppShell() {
               : "min-h-[calc(100vh-1.5rem)] overflow-visible",
           )}
         >
+          <OnboardingWizard />
           <Outlet />
         </motion.div>
       </main>

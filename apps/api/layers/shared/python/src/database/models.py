@@ -24,6 +24,8 @@ class Tenant(SQLModel, table=True):
     primary_color: Optional[str] = None
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
+    # First-run wizard progress (JSON text)
+    onboarding_json: str = Field(default="{}", sa_column=Column(Text, default="{}"))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
