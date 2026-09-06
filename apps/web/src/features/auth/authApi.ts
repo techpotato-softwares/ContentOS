@@ -17,10 +17,19 @@ export const authApi = createApi({
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),
     register: build.mutation<
-      LoginResponse & { tenant?: { tenantId: number; name: string } },
+      LoginResponse & { tenant?: { tenantId: number; name: string; slug?: string } },
       { username: string; email: string; password: string; companyName: string }
     >({
-      query: (body) => ({ url: "/api/register", method: "POST", body }),
+      query: (body) => ({
+        url: "/api/register",
+        method: "POST",
+        body: {
+          username: body.username,
+          email: body.email,
+          password: body.password,
+          companyName: body.companyName,
+        },
+      }),
       transformResponse: (r: unknown) => unwrapData(r),
     }),
   }),

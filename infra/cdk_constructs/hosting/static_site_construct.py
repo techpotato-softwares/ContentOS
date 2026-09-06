@@ -15,7 +15,7 @@ from constructs import Construct
 
 from config.environment import EnvironmentConfig
 
-# Rewrites /app and /app/<spa-routes> → /app/index.html (assets with '.' pass through).
+# Rewrites /app SPA routes and marketing static-export folders to index.html.
 _SPA_APP_FUNCTION = """
 function handler(event) {
   var request = event.request;
@@ -31,6 +31,13 @@ function handler(event) {
     if (rest.length > 0 && rest.indexOf('.') === -1) {
       request.uri = '/app/index.html';
     }
+    return request;
+  }
+
+  if (uri.endsWith('/')) {
+    request.uri = uri + 'index.html';
+  } else if (uri.indexOf('.') === -1) {
+    request.uri = uri + '/index.html';
   }
 
   return request;
@@ -160,10 +167,10 @@ class StaticSiteConstruct(Construct):
         )
 
         marketing = Path(marketing_path)
-        if not marketing.is_dir():
+        if not (marketing / "index.html").is_file():
             raise FileNotFoundError(
-                f"Marketing site path missing: {marketing}. "
-                "Expected apps/marketing with index.html"
+                f"Marketing build missing at {marketing}. "
+                "Run: npm run build:marketing"
             )
 
         ui = Path(ui_build_path)
@@ -180,7 +187,7 @@ class StaticSiteConstruct(Construct):
             sources=[s3deploy.Source.asset(str(marketing))],
             destination_bucket=self.bucket,
             distribution=self.distribution,
-            distribution_paths=["/index.html", "/"],
+            distribution_paths=["/*"],
             memory_limit=512,
         )
 
