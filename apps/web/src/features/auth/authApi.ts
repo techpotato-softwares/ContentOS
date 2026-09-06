@@ -43,41 +43,6 @@ export const authApi = createApi({
       }),
       transformResponse: (r: unknown) => unwrapData(r),
     }),
-    requestEmailVerification: build.mutation<MessageResponse, { email: string }>({
-      query: (body) => ({
-        url: "/api/auth/verify-email/request",
-        method: "POST",
-        body,
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-    }),
-    confirmEmailVerification: build.mutation<MessageResponse, { token: string }>({
-      query: (body) => ({
-        url: "/api/auth/verify-email/confirm",
-        method: "POST",
-        body,
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-    }),
-    requestPasswordReset: build.mutation<MessageResponse, { email: string }>({
-      query: (body) => ({
-        url: "/api/auth/password-reset/request",
-        method: "POST",
-        body,
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-    }),
-    confirmPasswordReset: build.mutation<
-      MessageResponse,
-      { token: string; password: string }
-    >({
-      query: (body) => ({
-        url: "/api/auth/password-reset/confirm",
-        method: "POST",
-        body,
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-    }),
   }),
 })
 

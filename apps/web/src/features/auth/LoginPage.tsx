@@ -11,9 +11,17 @@ function apiErrorMessage(err: unknown): string | undefined {
   if (!err || typeof err !== "object") return undefined
   const e = err as {
     status?: number | string
-    data?: { error?: { message?: string }; message?: string }
+    data?: { error?: { message?: string; code?: string }; message?: string }
   }
-  return e.data?.error?.message || e.data?.message
+  const msg = e.data?.error?.message || e.data?.message
+  if (msg) return msg
+  if (e.status === 409) {
+    return "An account with this email already exists. Sign in or use a different email."
+  }
+  if (e.status === 400) {
+    return "Please check the form and try again."
+  }
+  return undefined
 }
 
 export function LoginPage() {
@@ -23,7 +31,6 @@ export function LoginPage() {
   const [email, setEmail] = useState("")
   const [companyName, setCompanyName] = useState("")
   const [formError, setFormError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
   const [login, loginState] = useLoginMutation()
   const [register, registerState] = useRegisterMutation()
   const dispatch = useAppDispatch()
@@ -58,13 +65,7 @@ export function LoginPage() {
           user: res.user,
         }),
       )
-      if (mode === "register" || res.user?.emailVerified === false) {
-        setInfo(
-          res.devLink
-            ? "Account created. Check your email to verify (dev link also returned locally)."
-            : "Account ready. Verify your email to unlock publishing.",
-        )
-      }
+      // New tenants land in the agent workspace (primary product surface).
       navigate("/agent")
     } catch (err) {
       const msg = apiErrorMessage(err)
@@ -94,7 +95,6 @@ export function LoginPage() {
             onClick={() => {
               setMode("login")
               setFormError(null)
-              setInfo(null)
             }}
           >
             Login
@@ -106,7 +106,6 @@ export function LoginPage() {
             onClick={() => {
               setMode("register")
               setFormError(null)
-              setInfo(null)
             }}
           >
             Register company
@@ -119,6 +118,7 @@ export function LoginPage() {
               <Input
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Acme Cloud"
                 required
                 autoComplete="organization"
               />
@@ -167,14 +167,13 @@ export function LoginPage() {
         >
           {mode === "login" ? "Sign in" : "Create account"}
         </Button>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <Link to="/forgot-password" className="text-primary hover:underline">
-            Forgot password?
-          </Link>
-          <Link to="/verify-email" className="text-primary hover:underline">
-            Verify email
-          </Link>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Self-serve signup creates your company workspace automatically. Local seed
+          users (<code>superadmin</code> / <code>demo</code>) are for development only.
+        </p>
+        <Link to="/" className="text-xs text-primary">
+          Home
+        </Link>
       </motion.form>
     </div>
   )

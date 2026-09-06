@@ -28,7 +28,7 @@ def resolve_tenant_id(user: dict | None, requested_tenant_id: int | None = None)
         if not is_super_admin(u):
             raise ForbiddenError("Only super admin can access another tenant")
         return int(requested_tenant_id)
-    tid = u.get("tenantId")
+    tid = u.get("tenantId") if u.get("tenantId") is not None else u.get("tenant_id")
     if tid is None:
         raise ForbiddenError("User has no tenant context")
     return int(tid)
@@ -38,7 +38,7 @@ def assert_same_tenant(user: dict | None, resource_tenant_id: int) -> None:
     u = require_user(user)
     if is_super_admin(u):
         return
-    tid = u.get("tenantId")
+    tid = u.get("tenantId") if u.get("tenantId") is not None else u.get("tenant_id")
     if tid is None or int(tid) != int(resource_tenant_id):
         raise ForbiddenError("Cross-tenant access denied")
 

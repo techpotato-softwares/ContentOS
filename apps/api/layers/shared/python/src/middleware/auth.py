@@ -13,26 +13,6 @@ def _normalize_user(user: JWTPayload) -> JWTPayload:
     return normalized  # type: ignore[return-value]
 
 
-def _assert_token_version(user: JWTPayload) -> None:
-    """Reject JWTs issued before a password reset (token_version mismatch)."""
-    user_id = user.get("userId")
-    if not user_id:
-        raise AppError("Invalid token payload", 401, "UNAUTHORIZED")
-    from database import get_session
-    from database.models import User
-
-    with get_session() as session:
-        row = session.get(User, int(user_id))
-        if not row or not row.is_active:
-            raise AppError("Invalid or expired token", 401, "UNAUTHORIZED")
-        expected = int(getattr(row, "token_version", 0) or 0)
-        claimed = int(user.get("tv") or 0)
-        if claimed != expected:
-            raise AppError("Session expired — please sign in again", 401, "SESSION_REVOKED")
-        # Keep emailVerified claim fresh for clients that trust JWT
-        user["emailVerified"] = bool(row.email_verified_at)  # type: ignore[index]
-
-
 def auth_middleware(event: dict) -> dict | dict:
     """Return event with user or an API Gateway error response."""
     try:

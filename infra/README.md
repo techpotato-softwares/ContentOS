@@ -15,7 +15,7 @@ Config source of truth: [`config/environment.py`](config/environment.py) (not Ty
 
 | Path | Content |
 |------|---------|
-| `/` | Marketing site (`apps/marketing`) |
+| `/` | Marketing site (`apps/marketing` static export) |
 | `/app/` | Product SPA (`apps/web` built with `VITE_BASE=/app/`) |
 
 ## Local deploy
@@ -24,6 +24,7 @@ Config source of truth: [`config/environment.py`](config/environment.py) (not Ty
 # One-time: Python >= 3.10, AWS creds, CDK bootstrap
 npm run install:api
 npm run install:web
+npm run install:marketing
 npm run install:infra
 cd infra && source .venv/bin/activate
 npx aws-cdk bootstrap

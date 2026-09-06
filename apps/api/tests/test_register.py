@@ -1,4 +1,8 @@
-"""Integration tests for POST /api/register (requires seeded tenant_admin role)."""
+"""Integration tests for production self-serve signup (POST /api/register).
+
+Seed scripts are NOT used — registration must bootstrap RBAC and create
+Tenant + User + tenant_admin membership atomically.
+"""
 from __future__ import annotations
 
 import json
@@ -28,8 +32,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, select
 
 import database as db_mod
-from database.models import User, Tenant, Role, Permission, RolePermission
-from middleware.error_handler import ValidationError
+from database.models import User, Tenant, Role
+from middleware.error_handler import ConflictError, ValidationError, AppError
 from utils.webtoken import verify_access_token
 from modules.platform.src.controllers.auth_controller import AuthController
 
@@ -87,9 +91,6 @@ def db_session(tmp_path):
     def _get_session():
         return factory()
 
-    with _get_session() as s:
-        _seed_rbac(s)
-
     with patch.object(db_mod, "get_session", _get_session), patch.object(
         db_mod, "get_engine", lambda: engine
     ), patch(
@@ -135,14 +136,16 @@ def test_register_creates_user_tenant_and_tenant_admin(db_session):
     with db_session() as session:
         user = session.exec(select(User).where(User.email == payload["email"])).first()
         assert user is not None
-        assert user.email_verified_at is None
         assert user.tenant_id == data["user"]["tenantId"]
+        tenant = session.get(Tenant, user.tenant_id)
+        assert tenant is not None
+        assert tenant.name == payload["companyName"]
         role = session.get(Role, user.role_id)
         assert role is not None
         assert role.role_name == "tenant_admin"
 
 
-def test_register_jwt_contains_tenant_role_and_tv(db_session):
+def test_register_jwt_contains_tenant_and_role(db_session):
     ctrl = AuthController()
     _, resp = _register(ctrl)
     data = json.loads(resp["body"])["data"]
@@ -150,22 +153,23 @@ def test_register_jwt_contains_tenant_role_and_tv(db_session):
     assert claims.get("tenantId") == data["user"]["tenantId"]
     assert claims.get("role") == "tenant_admin"
     assert claims.get("userId") == data["user"]["userId"]
-    assert claims.get("emailVerified") is False
-    assert claims.get("tv") == 0
 
 
 def test_login_after_register(db_session):
     ctrl = AuthController()
-    payload, _ = _register(ctrl)
+    payload, reg = _register(ctrl)
     login_resp = ctrl.login(
         {"username": payload["email"], "password": payload["password"]}
     )
     assert login_resp["statusCode"] == 200
     login_data = json.loads(login_resp["body"])["data"]
-    assert login_data["user"]["emailVerified"] is False
+    claims = verify_access_token(login_data["accessToken"])
+    assert claims.get("tenantId") is not None
+    assert claims.get("role") == "tenant_admin"
 
 
-def test_authenticated_me_after_register(db_session):
+def test_authenticated_agent_sessions_after_register(db_session):
+    """Registered JWT can call an authenticated agent endpoint."""
     ctrl = AuthController()
     _, reg = _register(ctrl)
     data = json.loads(reg["body"])["data"]
@@ -208,7 +212,7 @@ def test_registration_failure_rolls_back_no_orphans(db_session):
 
     with patch(
         "modules.platform.src.controllers.auth_controller.bcrypt.hash",
-        side_effect=RuntimeError("simulated"),
+        side_effect=RuntimeError("simulated user create failure"),
     ):
         with pytest.raises(RuntimeError, match="simulated"):
             ctrl.register(
@@ -224,3 +228,13 @@ def test_registration_failure_rolls_back_no_orphans(db_session):
         assert session.exec(select(User).where(User.email == email)).first() is None
         assert session.exec(select(User).where(User.username == username)).first() is None
         assert session.exec(select(Tenant).where(Tenant.name == company)).first() is None
+
+
+def test_slug_collision_derives_unique_slug(db_session):
+    ctrl = AuthController()
+    company = "Same Name Co"
+    _, first = _register(ctrl, companyName=company, username=_unique("s1"))
+    _, second = _register(ctrl, companyName=company, username=_unique("s2"))
+    slug1 = json.loads(first["body"])["data"]["tenant"]["slug"]
+    slug2 = json.loads(second["body"])["data"]["tenant"]["slug"]
+    assert slug1 != slug2
