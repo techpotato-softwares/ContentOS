@@ -113,13 +113,15 @@ Optional later:
 - `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` for publishing
 - Infra: `npm run install:infra` and `infra/env.template.json` → `env.local.json` (gitignored)
 
-### 3. Initialize the database
+### 3. Initialize the database (local / dev only)
 
 ```bash
 npm run db:init
 ```
 
-Creates tables and seeds roles, permissions, and demo users.
+Creates tables and seeds **local demo** roles, permissions, and users (`superadmin` / `demo`).
+
+**Production signup does not use seed scripts.** `POST /api/register` is self-serve: it creates the Tenant, User, and `tenant_admin` membership in one transaction, and ensures platform roles/permissions exist idempotently. Seed is for local development and optional demo data only — it must not be a production onboarding dependency.
 
 ### 4. Run API + UI (two terminals)
 
@@ -133,14 +135,14 @@ npm run dev:web
 
 Open **http://localhost:5173** and sign in.
 
-### 5. Seed logins
+### 5. Seed logins (local / dev only)
 
 | Username | Password | Role |
 |----------|----------|------|
 | `superadmin` | `ChangeMe123!` | Platform super admin (all tenants) |
 | `demo` | `ChangeMe123!` | Tenant admin for **Demo Co** |
 
-Change these passwords before any shared or production use.
+Change these passwords before any shared use. In production, users sign up via **Register company** (`POST /api/register`) with `companyName` — no seed required.
 
 ### 6. First product walkthrough
 
@@ -201,7 +203,7 @@ Stop with `Ctrl+C` in each terminal. After changing `apps/api/.env`, restart `de
 | `npm run install:web` | `npm install` in `apps/web` |
 | `npm run install:marketing` | `npm install` in `apps/marketing` |
 | `npm run install:infra` | CDK Python venv |
-| `npm run db:init` | Create/migrate seed data |
+| `npm run db:init` | Local/dev only: create tables + demo users (not required for production signup) |
 | `npm run dev:api` | Uvicorn on port **4001** |
 | `npm run dev:web` | Vite on port **5173** |
 | `npm run dev:marketing` | Next.js marketing site on port **3000** |
