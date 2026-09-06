@@ -40,6 +40,7 @@ ContentOS/
 │   │   ├── media/           # local generated images (gitignored)
 │   │   └── .env.example
 │   ├── web/                 # React + Vite SPA (Redux Toolkit, RTK Query, Tailwind, Framer Motion, Three.js)
+│   ├── marketing/           # Next.js marketing site (static export → CloudFront `/`)
 │   └── docs/                # Framework / platform docs (architecture, security, etc.)
 ├── infra/                   # AWS CDK (Python) — API Lambdas, secrets, S3, optional static hosting
 ├── Docs/ / RequirementDocs/ # Product PRD / TRD / PRR (Word)
@@ -51,6 +52,7 @@ ContentOS/
 |------|--------|
 | `apps/api` | Python 3.9+, FastAPI/Uvicorn locally, SQLModel, Postgres, JWT, OpenAI (or Bedrock/stub) |
 | `apps/web` | React 19, TypeScript, Vite, Redux Toolkit + RTK Query, Tailwind v4, shadcn-style UI |
+| `apps/marketing` | Next.js 15, React 19, Tailwind — static export for CloudFront `/` |
 | `infra` | AWS CDK — Lambdas: auth, tenants, agent, publishing |
 
 ---
@@ -199,11 +201,14 @@ Stop with `Ctrl+C` in each terminal. After changing `apps/api/.env`, restart `de
 |--------|-------------|
 | `npm run install:api` | Create `apps/api/.venv` and install Python package |
 | `npm run install:web` | `npm install` in `apps/web` |
+| `npm run install:marketing` | `npm install` in `apps/marketing` |
 | `npm run install:infra` | CDK Python venv |
 | `npm run db:init` | Local/dev only: create tables + demo users (not required for production signup) |
 | `npm run dev:api` | Uvicorn on port **4001** |
 | `npm run dev:web` | Vite on port **5173** |
+| `npm run dev:marketing` | Next.js marketing site on port **3000** |
 | `npm run build:web` | Production web build |
+| `npm run build:marketing` | Production marketing static export |
 | `npm run build:layer` | Build Lambda dependency layer |
 | `npm run test` | API pytest |
 | `npm run synth:dev` / `deploy:dev` / `deploy:qa` | CDK synth/deploy |
@@ -261,11 +266,11 @@ Local images are served at `/media/...`. In production, uploads go to S3.
 ## Deploy (summary)
 
 ```bash
-npm run install:api && npm run install:web && npm run install:infra
+npm run install:api && npm run install:web && npm run install:marketing && npm run install:infra
 npm run deploy:qa     # or deploy:prod
 ```
 
-- **`/`** — marketing placeholder (`apps/marketing`)
+- **`/`** — marketing site (`apps/marketing`)
 - **`/app/`** — product SPA
 - **QA** — Supabase; after first deploy, set password on Secrets Manager secret `/contentos/qa/db`
 - **Prod** — RDS provisioned by CDK; JWT + DB secrets created automatically
