@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Local/dev DB bootstrap — roles, permissions, superadmin/demo users.
+"""Local/dev database bootstrap — NOT required for production self-serve signup.
 
-Seed users/passwords are disabled when APP_ENV=production (see utils/seed_credentials).
+Creates tables and seeds demo roles, permissions, superadmin/demo users.
+Production tenants sign up via POST /api/register (transactional; bootstraps RBAC).
 """
 from __future__ import annotations
 import os
