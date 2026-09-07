@@ -338,77 +338,58 @@ class AuthController:
             preferred_slug = str(preferred_slug).strip() or None
 
         with get_session() as session:
-            try:
-                # Pre-checks for clear 409 messages (race still handled via IntegrityError)
-                if session.exec(select(User).where(User.email == email)).first():
-                    raise ConflictError(
-                        "An account with this email already exists. Sign in or use a different email."
-                    )
-                if session.exec(select(User).where(User.username == username)).first():
-                    raise ConflictError(
-                        "This username is already taken. Please choose another."
-                    )
+            if session.exec(select(User).where((User.username == username) | (User.email == email))).first():
+                raise ValidationError("Username or email already exists")
+            if session.exec(select(Tenant).where(Tenant.slug == slug)).first():
+                raise ValidationError("Company slug already exists")
+            role = session.exec(select(Role).where(Role.role_name == "tenant_admin")).first()
+            if not role:
+                raise AppError("Roles not seeded — run scripts/seed.py", 500, "SETUP")
+            training = TenantTrainingSchema(
+                company=CompanySection(legal_name=company_name, display_name=company_name),
+                brand_visual=BrandVisualSection(ui_mode="platform"),
+            )
+            tenant = Tenant(
+                name=company_name,
+                slug=slug,
+                modules_enabled=json.dumps(["platform", "tenants", "agent", "publishing"]),
+                training_json=training.model_dump_json(),
+                ui_mode="platform",
+                app_display_name=company_name,
+            )
+            from billing import apply_billing_defaults
 
-                role = _ensure_platform_rbac(session)
-                slug = _unique_tenant_slug(session, company_name, preferred_slug)
-
-                training = TenantTrainingSchema(
-                    company=CompanySection(
-                        legal_name=company_name, display_name=company_name
-                    ),
-                    brand_visual=BrandVisualSection(ui_mode="platform"),
-                )
-                tenant = Tenant(
-                    name=company_name,
-                    slug=slug,
-                    modules_enabled=json.dumps(
-                        ["platform", "tenants", "agent", "publishing"]
-                    ),
-                    training_json=training.model_dump_json(),
-                    ui_mode="platform",
-                    app_display_name=company_name,
-                )
-                session.add(tenant)
-                session.flush()  # allocate tenant_id without committing
-
-                user = User(
-                    username=username,
-                    email=email,
-                    password=bcrypt.hash(password),
-                    role_id=role.role_id,
-                    tenant_id=tenant.tenant_id,
-                )
-                session.add(user)
-                session.flush()
-
-                # Single atomic commit: Tenant + User (tenant_admin membership via role_id)
-                session.commit()
-                session.refresh(tenant)
-                session.refresh(user)
-
-                role, permission_codes = _user_permissions(session, user.role_id)
-                modules = _modules_for_tenant(session, user.tenant_id)
-                payload = _token_payload(user, role, permission_codes, modules)
-                if not payload.get("tenantId") or not payload.get("role"):
-                    raise AppError(
-                        "Registration incomplete: missing tenant or role in session",
-                        500,
-                        "SETUP",
-                    )
-                tokens = generate_tokens(payload)
-                return create_success_response(
-                    {
-                        "success": True,
-                        "message": "Registered",
-                        **tokens,
-                        "user": _auth_user_dict(
-                            user, role, permission_codes, modules
-                        ),
-                        "tenant": {
-                            "tenantId": tenant.tenant_id,
-                            "name": tenant.name,
-                            "slug": tenant.slug,
-                        },
+            apply_billing_defaults(tenant)
+            session.add(tenant)
+            session.commit()
+            session.refresh(tenant)
+            user = User(
+                username=username,
+                email=email,
+                password=bcrypt.hash(password),
+                role_id=role.role_id,
+                tenant_id=tenant.tenant_id,
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            role, permission_codes = _user_permissions(session, user.role_id)
+            modules = _modules_for_tenant(session, user.tenant_id)
+            payload = _token_payload(user, role, permission_codes, modules)
+            tokens = generate_tokens(payload)
+            return create_success_response(
+                {
+                    "success": True,
+                    "message": "Registered",
+                    **tokens,
+                    "user": {
+                        "userId": user.user_id,
+                        "username": user.username,
+                        "email": user.email,
+                        "roleName": role.role_name if role else None,
+                        "tenantId": user.tenant_id,
+                        "permissions": permission_codes,
+                        "modulesEnabled": modules,
                     },
                     201,
                 )

@@ -19,8 +19,13 @@ from training.schema import (
 )
 
 
+from billing import apply_billing_defaults, tenant_billing_public, redact_secrets
+from billing.schema import ensure_tenant_billing_schema
+from billing.ai_billing import list_usage_events_for_tenant, usage_public
+
+
 def _tenant_dict(t: Tenant) -> dict:
-    return {
+    base = {
         "tenantId": t.tenant_id,
         "name": t.name,
         "slug": t.slug,
@@ -33,7 +38,11 @@ def _tenant_dict(t: Tenant) -> dict:
         "contextPackVersion": t.context_pack_version,
         "isActive": t.is_active,
         "modulesEnabled": json.loads(t.modules_enabled or "[]"),
+        "plan": getattr(t, "plan", None) or "starter",
+        "aiBillingMode": getattr(t, "ai_billing_mode", None) or "platform",
+        "billing": tenant_billing_public(t),
     }
+    return redact_secrets(base)
 
 
 def _apply_brand_columns(tenant: Tenant, training: TenantTrainingSchema) -> None:
@@ -110,6 +119,7 @@ class TenantsController:
                 ui_mode="platform",
                 app_display_name=name,
             )
+            apply_billing_defaults(t)
             session.add(t)
             session.commit()
             session.refresh(t)
@@ -131,11 +141,36 @@ class TenantsController:
         q = query or {}
         requested = int(q["tenantId"]) if q.get("tenantId") else None
         tid = resolve_tenant_id(user, requested)
+        ensure_tenant_billing_schema()
         with get_session() as session:
             t = session.get(Tenant, tid)
             if not t:
                 raise NotFoundError("Tenant not found")
             return create_success_response(_tenant_dict(t))
+
+    @Get("/tenants/me/ai-usage")
+    @RequireModule("tenants")
+    @RequirePermission("tenant:admin", "training:manage", "agent:chat", "admin:tenants")
+    def list_ai_usage(self, user=None, query: dict | None = None):
+        """Tenant-scoped AiUsageEvent list (no secrets)."""
+        q = query or {}
+        requested = int(q["tenantId"]) if q.get("tenantId") else None
+        tid = resolve_tenant_id(user, requested)
+        limit = int(q.get("limit") or 50)
+        ensure_tenant_billing_schema()
+        with get_session() as session:
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            events = list_usage_events_for_tenant(session, tid, limit=limit)
+            return create_success_response(
+                {
+                    "usage": usage_public(t),
+                    "plan": getattr(t, "plan", None) or "starter",
+                    "aiBillingMode": getattr(t, "ai_billing_mode", None) or "platform",
+                    "events": events,
+                }
+            )
 
     @Get("/tenants/me/theme")
     @RequireModule("tenants")

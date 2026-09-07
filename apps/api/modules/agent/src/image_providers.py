@@ -85,9 +85,14 @@ def _bedrock_runtime_client():
 
 
 class OpenAIImageProvider(ImageBackgroundProvider):
-    def __init__(self, model_id: str = "gpt-image-1"):
+    def __init__(self, model_id: str = "gpt-image-1", api_key: str | None = None):
         self.model_id = model_id
-        self.api_key = (os.environ.get("OPENAI_API_KEY") or "").strip().strip('"').strip("'")
+        self.api_key = (
+            (api_key if api_key is not None else os.environ.get("OPENAI_API_KEY") or "")
+            .strip()
+            .strip('"')
+            .strip("'")
+        )
         if not self.api_key:
             raise AppError("OPENAI_API_KEY missing", 500, "AI_CONFIG")
 
@@ -505,12 +510,19 @@ def list_image_models() -> list[dict]:
     return out
 
 
-def get_image_provider(model_id: Optional[str] = None) -> ImageBackgroundProvider:
+def get_image_provider(
+    model_id: Optional[str] = None, *, api_keys: dict | None = None
+) -> ImageBackgroundProvider:
     mid = (model_id or os.environ.get("OPENAI_IMAGE_MODEL") or "gpt-image-1").strip()
+    keys = api_keys or {}
+    openai_override = (keys.get("OPENAI_API_KEY") or keys.get("openai_api_key") or "").strip() or None
     if mid == "stub" or (os.environ.get("AI_PROVIDER") or "").lower() == "stub":
         return StubImageProvider()
     if mid in ("gpt-image-1", "dall-e-3", "gpt-image-1-mini"):
-        return OpenAIImageProvider(mid if mid != "gpt-image-1-mini" else "gpt-image-1")
+        return OpenAIImageProvider(
+            mid if mid != "gpt-image-1-mini" else "gpt-image-1",
+            api_key=openai_override,
+        )
     if mid.startswith("bedrock-"):
         return BedrockImageProvider(mid)
     if mid == "ideogram":
@@ -522,7 +534,10 @@ def get_image_provider(model_id: Optional[str] = None) -> ImageBackgroundProvide
             return RecraftImageProvider()
         return MissingKeyImageProvider("recraft", "RECRAFT_API_KEY")
     # Default OpenAI
-    return OpenAIImageProvider(os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"))
+    return OpenAIImageProvider(
+        os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"),
+        api_key=openai_override,
+    )
 
 
 def nearest_gen_size(preset_w: int, preset_h: int, model_id: str) -> str:

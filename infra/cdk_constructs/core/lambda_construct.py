@@ -91,6 +91,9 @@ class LambdaConstruct(Construct):
             "JWT_SECRET_ID": config.jwt.secret_id,
             "JWT_EXPIRES_IN": config.jwt.expires_in,
             "JWT_REFRESH_EXPIRES_IN": config.jwt.refresh_expires_in,
+            "AI_SECRET_ID": os.environ.get(
+                "AI_SECRET_ID", f"/{os.environ.get('APP_NAME', 'contentos')}/{config.environment}/ai"
+            ),
             "LOG_LEVEL": "INFO" if config.environment == "prod" else "DEBUG",
             "AI_PROVIDER": os.environ.get("AI_PROVIDER", "openai"),
             "OPENAI_MODEL": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),

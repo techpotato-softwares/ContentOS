@@ -44,8 +44,15 @@ def create_error_response(error: Exception) -> dict:
         status, code, message = error.status_code, error.code, error.message
     else:
         status, code, message = 500, "INTERNAL_ERROR", str(error) or "Internal server error"
-    body = {"success": False, "error": {"code": code, "message": message}}
-    return {"statusCode": status, "headers": {**CORS}, "body": json.dumps(body)}
+    body: dict[str, Any] = {"success": False, "error": {"code": code, "message": message}}
+    # QuotaExceededError (and similar) attach upgrade / plan / usage for billing UI
+    if getattr(error, "upgrade", None) is not None:
+        body["upgrade"] = bool(getattr(error, "upgrade"))
+    if getattr(error, "plan", None) is not None:
+        body["plan"] = getattr(error, "plan")
+    if getattr(error, "usage", None) is not None:
+        body["usage"] = getattr(error, "usage")
+    return {"statusCode": status, "headers": {**CORS}, "body": json.dumps(body, default=str)}
 
 def handle_options() -> dict:
     return {"statusCode": 204, "headers": {**CORS}, "body": ""}

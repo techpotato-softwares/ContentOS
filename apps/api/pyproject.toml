@@ -34,7 +34,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["layers/shared/python/src", "modules", "."]
-include = ["arcforge_shared*", "config*", "database*", "decorators*", "core*", "middleware*", "utils*", "training*"]
+include = ["arcforge_shared*", "billing*", "config*", "database*", "decorators*", "core*", "middleware*", "utils*", "training*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

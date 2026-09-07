@@ -396,8 +396,13 @@ class StubProvider(AIProvider):
 
 
 class OpenAIProvider(AIProvider):
-    def __init__(self):
-        self.api_key = (os.environ.get("OPENAI_API_KEY") or "").strip().strip('"').strip("'")
+    def __init__(self, api_key: str | None = None):
+        self.api_key = (
+            (api_key if api_key is not None else os.environ.get("OPENAI_API_KEY") or "")
+            .strip()
+            .strip('"')
+            .strip("'")
+        )
         self.model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         self.image_model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
         if not self.api_key:
@@ -803,8 +808,13 @@ POSTS JSON:
 class GeminiProvider(OpenAIProvider):
     """Google Gemini for text/planning. Images stay on OpenAI via image_providers."""
 
-    def __init__(self):
-        self.api_key = (os.environ.get("GEMINI_API_KEY") or "").strip().strip('"').strip("'")
+    def __init__(self, api_key: str | None = None):
+        self.api_key = (
+            (api_key if api_key is not None else os.environ.get("GEMINI_API_KEY") or "")
+            .strip()
+            .strip('"')
+            .strip("'")
+        )
         self.model = (os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash").strip()
         # Kept for OpenAIProvider.generate_image fallback if ever called
         self.image_model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
@@ -1233,10 +1243,13 @@ def list_text_providers() -> list[dict]:
     ]
 
 
-def get_provider(name: str | None = None) -> AIProvider:
+def get_provider(name: str | None = None, *, api_keys: dict | None = None) -> AIProvider:
     resolved = (name or os.environ.get("AI_PROVIDER") or "openai").lower().strip()
-    openai_key = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
-    gemini_key = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+    keys = api_keys or {}
+    openai_override = (keys.get("OPENAI_API_KEY") or keys.get("openai_api_key") or "").strip() or None
+    gemini_override = (keys.get("GEMINI_API_KEY") or keys.get("gemini_api_key") or "").strip() or None
+    openai_key = bool(openai_override or (os.environ.get("OPENAI_API_KEY") or "").strip())
+    gemini_key = bool(gemini_override or (os.environ.get("GEMINI_API_KEY") or "").strip())
     logger.info(
         "AI provider resolve",
         {
@@ -1244,6 +1257,7 @@ def get_provider(name: str | None = None) -> AIProvider:
             "openai_key_present": openai_key,
             "gemini_key_present": gemini_key,
             "bedrock_configured": bedrock_configured(),
+            "keys_overridden": bool(api_keys),
         },
     )
     if resolved == "stub":
@@ -1251,9 +1265,9 @@ def get_provider(name: str | None = None) -> AIProvider:
     if resolved == "bedrock":
         return BedrockProvider()
     if resolved == "gemini":
-        return GeminiProvider()
+        return GeminiProvider(api_key=gemini_override)
     if resolved == "openai":
-        return OpenAIProvider()
+        return OpenAIProvider(api_key=openai_override)
     raise AppError(
         f"Unknown AI_PROVIDER={resolved}. Use openai | gemini | bedrock | stub.",
         500,
