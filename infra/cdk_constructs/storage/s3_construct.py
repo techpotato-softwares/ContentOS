@@ -1,7 +1,7 @@
 """S3 buckets from config/s3_config.py."""
 from __future__ import annotations
 
-from aws_cdk import CfnOutput, Duration, RemovalPolicy
+from aws_cdk import CfnOutput, Duration
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
@@ -96,7 +96,7 @@ class S3Construct(Construct):
                 else None
             ),
             removal_policy=bucket_cfg.removal_policy,
-            auto_delete_objects=bucket_cfg.removal_policy == RemovalPolicy.DESTROY,
+            auto_delete_objects=bucket_cfg.resolves_auto_delete(),
             cors=cors_rules,
             lifecycle_rules=[
                 s3.LifecycleRule(

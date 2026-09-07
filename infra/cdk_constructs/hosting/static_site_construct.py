@@ -49,7 +49,9 @@ class StaticSiteConstruct(Construct):
         marketing_path: str,
     ) -> None:
         super().__init__(scope, construct_id)
+        # Ephemeral envs may be torn down by CI; never auto-empty prod buckets.
         is_prod = config.environment == "prod"
+        is_ephemeral = config.environment in ("dev", "qa")
 
         print(f"   🌐 Creating static site hosting for {config.environment}...")
 
@@ -59,11 +61,12 @@ class StaticSiteConstruct(Construct):
             bucket_name=f"contentos-ui-{config.environment}",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             encryption=s3.BucketEncryption.S3_MANAGED,
+            # Versioning retained for prod only — version markers can block destroy.
             versioned=is_prod,
             removal_policy=(
                 RemovalPolicy.RETAIN if is_prod else RemovalPolicy.DESTROY
             ),
-            auto_delete_objects=not is_prod,
+            auto_delete_objects=is_ephemeral,
         )
 
         oac = cloudfront.S3OriginAccessControl(
