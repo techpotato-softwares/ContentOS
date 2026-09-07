@@ -7,6 +7,8 @@ from decorators.auth_decorators import ApiPublic, RequirePermission
 from database import get_session
 from database.models import User, Role, RolePermission, Permission, Tenant
 from utils.webtoken import generate_tokens
+from utils.seed_credentials import reject_seed_login_in_production
+from utils.rate_limit import enforce_auth_rate_limit
 from middleware.error_handler import AppError, ValidationError, create_success_response
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
 
@@ -55,11 +57,13 @@ def _token_payload(user: User, role: Role | None, permissions: list[str], module
 class AuthController:
     @Post("/login")
     @ApiPublic()
-    def login(self, data: dict):
+    def login(self, data: dict, event=None):
         username = (data or {}).get("username")
         password = (data or {}).get("password")
         if not username or not password:
             raise ValidationError("Username and password are required")
+        enforce_auth_rate_limit("login", identity=str(username), event=event)
+        reject_seed_login_in_production(str(username), str(password))
         with get_session() as session:
             user = session.exec(
                 select(User).where(
@@ -119,7 +123,7 @@ class AuthController:
 
     @Post("/register")
     @ApiPublic()
-    def register(self, data: dict):
+    def register(self, data: dict, event=None):
         """Create a company tenant + tenant_admin user."""
         username = (data or {}).get("username")
         email = (data or {}).get("email")
@@ -127,6 +131,9 @@ class AuthController:
         company_name = (data or {}).get("companyName") or (data or {}).get("company_name")
         if not all([username, email, password, company_name]):
             raise ValidationError("username, email, password, companyName are required")
+        enforce_auth_rate_limit("register", identity=str(email or username), event=event)
+        reject_seed_login_in_production(str(username), str(password))
+        reject_seed_login_in_production(str(email), str(password))
         slug = (
             (data or {}).get("slug")
             or company_name.lower().replace(" ", "-").replace("_", "-")[:48]

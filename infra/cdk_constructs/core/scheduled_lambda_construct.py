@@ -75,6 +75,7 @@ class ScheduledLambdaConstruct(Construct):
     ) -> tuple[lambda_.Function, events.Rule]:
         environment: dict[str, str] = {
             "ENVIRONMENT": config.environment,
+            "APP_ENV": "production" if config.environment == "prod" else config.environment,
             "DB_HOST": db_host or config.database.host,
             "DB_PORT": str(config.database.port),
             "DB_NAME": config.database.name,
