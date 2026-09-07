@@ -38,6 +38,11 @@ class Tenant(SQLModel, table=True):
 
 
 class User(SQLModel, table=True):
+    """App user. Tenant membership is ``tenant_id`` + ``role_id`` (no separate join table).
+
+    Self-serve signup creates User + Tenant with ``tenant_admin`` role atomically.
+    """
+
     __tablename__ = "users"
     user_id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="tenants.tenant_id", index=True)
