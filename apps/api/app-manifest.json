@@ -20,6 +20,7 @@
         { "method": "GET", "path": "/api/admin/tenants", "controller": "TenantsController", "action": "list_tenants" },
         { "method": "POST", "path": "/api/admin/tenants", "controller": "TenantsController", "action": "create_tenant" },
         { "method": "GET", "path": "/api/tenants/me", "controller": "TenantsController", "action": "get_my_tenant" },
+        { "method": "GET", "path": "/api/tenants/me/ai-usage", "controller": "TenantsController", "action": "list_ai_usage" },
         { "method": "GET", "path": "/api/tenants/me/theme", "controller": "TenantsController", "action": "get_theme" },
         { "method": "GET", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "get_training" },
         { "method": "PUT", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "put_training" },
@@ -57,6 +58,13 @@
         { "method": "POST", "path": "/api/agent/insights/weekly-snapshot/send", "controller": "AgentController", "action": "weekly_snapshot_send" }
       ]
     },
+    "ai": {
+      "handler": "modules.ai.lambdas.ai.handler",
+      "controller": "AiController",
+      "routes": [
+        { "method": "POST", "path": "/api/ai/chat", "controller": "AiController", "action": "chat" }
+      ]
+    },
     "publishing": {
       "handler": "modules.publishing.lambdas.publishing.handler",
       "controller": "PublishingController",
@@ -76,7 +84,7 @@
   "modules": {
     "platform": { "sku": "platform", "lambdas": ["auth"] },
     "tenants": { "sku": "tenants", "lambdas": ["tenants"] },
-    "agent": { "sku": "agent", "lambdas": ["agent"] },
+    "agent": { "sku": "agent", "lambdas": ["agent", "ai"] },
     "publishing": { "sku": "publishing", "lambdas": ["publishing"] }
   }
 }

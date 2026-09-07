@@ -26,6 +26,12 @@ from modules.agent.src.image_providers import (
     get_image_provider,
     nearest_gen_size,
 )
+from billing.ai_billing import (
+    assert_platform_quota,
+    meter_ai_success,
+    resolve_ai_credentials,
+)
+from billing.schema import ensure_tenant_billing_schema
 
 
 def _ensure_layout_column():
@@ -338,6 +344,7 @@ class AgentController:
             raise ValidationError("message is required")
         tid = resolve_tenant_id(user)
         session_id = (data or {}).get("sessionId")
+        ensure_tenant_billing_schema()
         with get_session() as session:
             tenant = session.get(Tenant, tid)
             if not tenant:
@@ -369,7 +376,10 @@ class AgentController:
             history = [{"role": m.role, "content": m.content} for m in history_rows if m.role in ("user", "assistant")]
             pack = _load_context_pack(session, tenant)
             ai_name = ((data or {}).get("aiProvider") or (data or {}).get("textProvider") or "").strip() or None
-            provider = get_provider(ai_name)
+            creds = resolve_ai_credentials(tenant, preferred_provider=ai_name)
+            # Chat meters 1 unit (platform only; BYOK skips consume)
+            assert_platform_quota(tenant, 1)
+            provider = get_provider(ai_name or creds.provider_hint, api_keys=creds.as_dict())
             reply = provider.chat(message, pack, history)
             session.add(
                 ChatMessage(
@@ -381,6 +391,15 @@ class AgentController:
             )
             cs.updated_at = datetime.utcnow()
             session.add(cs)
+            meter_ai_success(
+                session,
+                tenant=tenant,
+                kind="chat",
+                units=1,
+                model=getattr(provider, "model", ai_name or "stub"),
+                provider=ai_name or creds.provider_hint or creds.source,
+                creds=creds,
+            )
             session.commit()
             return create_success_response(
                 {"sessionId": session_id, "reply": reply, "provider": ai_name or os_provider()}
@@ -427,6 +446,7 @@ class AgentController:
             if not tenant:
                 raise NotFoundError("Tenant not found")
 
+            ensure_tenant_billing_schema()
             # Always attach to a chat session so history + variants reload together
             title_seed = user_note or source_ref or brief
             cs = _ensure_chat_session(
@@ -441,7 +461,10 @@ class AgentController:
             training = parse_training(tenant.training_json)
             length_pref = training.messaging.linkedin_post_length_preference or "medium"
             pack = _load_context_pack(session, tenant)
-            provider = get_provider(ai_name)
+            expected_units = max(1, min(int(data.get("variantCount") or 3), 8))
+            creds = resolve_ai_credentials(tenant, preferred_provider=ai_name)
+            assert_platform_quota(tenant, expected_units)
+            provider = get_provider(ai_name or creds.provider_hint, api_keys=creds.as_dict())
             raw_plans = provider.plan_variants(brief, pack, format=post_format)
             raw_plans = provider.critic_variants(brief, pack, raw_plans, format=post_format)
             plans = parse_variant_plans(
@@ -455,7 +478,7 @@ class AgentController:
             img_provider = None
             gen_size = None
             if post_format in ("image", "carousel") or (post_format == "text" and attach_image):
-                img_provider = get_image_provider(image_model)
+                img_provider = get_image_provider(image_model, api_keys=creds.as_dict())
                 gen_size = nearest_gen_size(
                     width, height, getattr(img_provider, "model_id", "gpt-image-1")
                 )
@@ -697,6 +720,20 @@ class AgentController:
                 resource_type="generation_batch",
                 resource_id=str(batch.batch_id),
                 detail=json.dumps({"brief": brief[:400], "format": post_format}),
+            )
+            meter_ai_success(
+                session,
+                tenant=tenant,
+                kind="generate_batch",
+                units=len(posts),
+                model=getattr(provider, "model", ai_name or "stub"),
+                provider=ai_name or creds.provider_hint or os_provider(),
+                creds=creds,
+                meta={
+                    "batchId": batch.batch_id,
+                    "format": post_format,
+                    "sessionId": session_id,
+                },
             )
             session.commit()
             for p in posts:
