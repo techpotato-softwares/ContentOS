@@ -17,10 +17,12 @@ from training.schema import (
     CompanySection,
     BrandVisualSection,
 )
+from billing import apply_billing_defaults, tenant_billing_public, redact_secrets
+from billing.schema import ensure_tenant_billing_schema
 
 
 def _tenant_dict(t: Tenant) -> dict:
-    return {
+    base = {
         "tenantId": t.tenant_id,
         "name": t.name,
         "slug": t.slug,
@@ -33,7 +35,12 @@ def _tenant_dict(t: Tenant) -> dict:
         "contextPackVersion": t.context_pack_version,
         "isActive": t.is_active,
         "modulesEnabled": json.loads(t.modules_enabled or "[]"),
+        "plan": getattr(t, "plan", None) or "starter",
+        "aiBillingMode": getattr(t, "ai_billing_mode", None) or "platform",
+        "billing": tenant_billing_public(t),
     }
+    # Hard guarantee: never leak keys / secret ARNs even if model gains fields later
+    return redact_secrets(base)
 
 
 def _apply_brand_columns(tenant: Tenant, training: TenantTrainingSchema) -> None:
@@ -82,6 +89,7 @@ class TenantsController:
         require_user(user)
         if not is_super_admin(user):
             raise ValidationError("Forbidden")
+        ensure_tenant_billing_schema()
         with get_session() as session:
             rows = session.exec(select(Tenant).where(Tenant.is_active == True)).all()
             return create_success_response([_tenant_dict(t) for t in rows])
@@ -110,6 +118,7 @@ class TenantsController:
                 ui_mode="platform",
                 app_display_name=name,
             )
+            apply_billing_defaults(t)
             session.add(t)
             session.commit()
             session.refresh(t)
@@ -131,6 +140,7 @@ class TenantsController:
         q = query or {}
         requested = int(q["tenantId"]) if q.get("tenantId") else None
         tid = resolve_tenant_id(user, requested)
+        ensure_tenant_billing_schema()
         with get_session() as session:
             t = session.get(Tenant, tid)
             if not t:

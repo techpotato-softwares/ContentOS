@@ -9,6 +9,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "layers/shared/python/src"))
 
 from database.models import SQLModel  # noqa: E402
+import database.models  # noqa: F401,E402 — register Tenant, AiUsageEvent, etc.
 from sqlmodel import SQLModel as _SM  # noqa: F401
 
 config = context.config

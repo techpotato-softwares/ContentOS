@@ -24,6 +24,15 @@ class Tenant(SQLModel, table=True):
     primary_color: Optional[str] = None
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
+    # Hybrid AI billing (FEATURE-HYBRID-AI-BILLING.md foundation)
+    plan: str = Field(default="starter", index=True)
+    ai_billing_mode: str = Field(default="platform")  # platform | byok
+    ai_secret_arn: Optional[str] = None  # BYOK Secrets Manager name/ARN — never return in API
+    ai_posts_quota_monthly: int = 40
+    ai_posts_used_month: int = 0
+    ai_usage_month: Optional[str] = None  # YYYY-MM period key for quota reset
+    stripe_customer_id: Optional[str] = Field(default=None, index=True)
+    razorpay_customer_id: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -178,6 +187,19 @@ class AuditLog(SQLModel, table=True):
     resource_type: str
     resource_id: Optional[str] = None
     detail: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AiUsageEvent(SQLModel, table=True):
+    """Tenant-scoped AI metering events (platform quota + BYOK analytics)."""
+
+    __tablename__ = "ai_usage_events"
+    event_id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
+    kind: str = Field(index=True)  # generate_batch | chat | score | ...
+    units: int = 1
+    model: Optional[str] = None
+    meta_json: str = Field(default="{}", sa_column=Column(Text, default="{}"))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

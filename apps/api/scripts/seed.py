@@ -28,6 +28,7 @@ from database import init_db, get_session
 import database.models  # noqa: F401
 from database.models import Tenant, User, Role, Permission, RolePermission
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
+from billing import apply_billing_defaults
 import json
 
 PERMS = [
@@ -165,6 +166,7 @@ def main():
                 training_json=training.model_dump_json(),
                 ui_mode="platform",
             )
+            apply_billing_defaults(platform)
             session.add(platform)
             session.commit()
             session.refresh(platform)
@@ -189,6 +191,7 @@ def main():
                 ui_mode="platform",
                 app_display_name="Demo Co",
             )
+            apply_billing_defaults(demo)
             session.add(demo)
             session.commit()
             session.refresh(demo)

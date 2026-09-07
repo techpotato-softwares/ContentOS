@@ -151,6 +151,9 @@ class AuthController:
                 ui_mode="platform",
                 app_display_name=company_name,
             )
+            from billing import apply_billing_defaults
+
+            apply_billing_defaults(tenant)
             session.add(tenant)
             session.commit()
             session.refresh(tenant)
