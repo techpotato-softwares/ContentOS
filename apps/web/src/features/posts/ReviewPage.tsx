@@ -14,6 +14,8 @@ import { motion } from "framer-motion"
 import { PostMedia } from "@/shared/ui/PostMedia"
 import { cn } from "@/shared/lib/utils"
 import { mediaSrc } from "@/shared/lib/media"
+import { linkedInPublishErrorMessage } from "@/shared/lib/linkedinPublishErrors"
+import { Link } from "react-router-dom"
 
 const PIPELINE = ["draft", "pending_review", "approved", "published"] as const
 
@@ -141,6 +143,21 @@ export function ReviewPage() {
         <p className="text-sm text-muted-foreground">
           Score drafts, approve, then publish text / image / carousel to LinkedIn.
         </p>
+        {liStatus?.carousel && (
+          <p className="text-xs text-muted-foreground mt-2">
+            {liStatus.carousel.enabled
+              ? "Carousels publish as a LinkedIn PDF document (Documents API)."
+              : liStatus.carousel.message}{" "}
+            {!liStatus?.member?.connected && !liStatus?.organization?.connected && (
+              <>
+                <Link to="/connections/linkedin" className="text-primary underline">
+                  Connect LinkedIn
+                </Link>{" "}
+                before publishing.
+              </>
+            )}
+          </p>
+        )}
       </div>
       {bothConnected && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -268,11 +285,20 @@ export function ReviewPage() {
                       </Button>
                     </>
                   )}
+                  {fmt === "carousel" && !liStatus?.carousel?.enabled && (
+                    <p className="text-xs text-destructive">
+                      Carousel publish is disabled — convert to image/text or enable Documents API.
+                    </p>
+                  )}
                   {p.status !== "published" && p.status !== "rejected" && (
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={quickState.isLoading || publishState.isLoading}
+                      disabled={
+                        quickState.isLoading ||
+                        publishState.isLoading ||
+                        (fmt === "carousel" && liStatus?.carousel?.enabled === false)
+                      }
                       onClick={async () => {
                         setPublishError(null)
                         try {
@@ -283,12 +309,7 @@ export function ReviewPage() {
                           ).unwrap()
                           void refetch()
                         } catch (e: unknown) {
-                          const msg =
-                            (e as { data?: { message?: string; error?: string } })?.data
-                              ?.message ||
-                            (e as { data?: { error?: string } })?.data?.error ||
-                            "Post to LinkedIn failed"
-                          setPublishError(String(msg))
+                          setPublishError(linkedInPublishErrorMessage(e))
                         }
                       }}
                     >
@@ -299,7 +320,10 @@ export function ReviewPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={publishState.isLoading}
+                      disabled={
+                        publishState.isLoading ||
+                        (fmt === "carousel" && liStatus?.carousel?.enabled === false)
+                      }
                       onClick={async () => {
                         setPublishError(null)
                         try {
@@ -310,12 +334,7 @@ export function ReviewPage() {
                           ).unwrap()
                           void refetch()
                         } catch (e: unknown) {
-                          const msg =
-                            (e as { data?: { message?: string; error?: string } })?.data
-                              ?.message ||
-                            (e as { data?: { error?: string } })?.data?.error ||
-                            "Publish failed"
-                          setPublishError(String(msg))
+                          setPublishError(linkedInPublishErrorMessage(e))
                         }
                       }}
                     >

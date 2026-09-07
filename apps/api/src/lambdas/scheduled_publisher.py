@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 from sqlmodel import select
 from database import get_session
-from database.models import ContentPost, SocialAccount
+from database.models import ContentPost
 from utils.logger import logger
 from utils.tenant import write_audit
 
@@ -34,15 +34,13 @@ def handler(event, context):
             try:
                 from modules.publishing.src.controllers.publishing_controller import (
                     _load_tokens,
-                    _linkedin_ugc_publish,
-                    _linkedin_document_publish,
                     _pick_publish_account,
                     _ensure_social_account_columns,
                 )
+                from modules.publishing.src.linkedin_client import execute_linkedin_publish
 
                 _ensure_social_account_columns()
                 acct, kind = _pick_publish_account(session, post.tenant_id, None)
-                linkedin_id = None
                 layout = None
                 if post.layout_json:
                     try:
@@ -51,35 +49,22 @@ def handler(event, context):
                         layout = None
                 fmt = (layout or {}).get("format") or ("text" if not post.image_url else "image")
 
-                if acct and acct.token_payload_encrypted and acct.author_urn:
-                    tokens = _load_tokens(acct)
-                    access = tokens.get("access_token")
-                    author_urn = acct.author_urn
-                    cfg_ok = bool(os.environ.get("LINKEDIN_CLIENT_ID") and access and author_urn)
-                    if fmt == "carousel" and cfg_ok:
-                        slides = (layout or {}).get("slides") or []
-                        slide_urls = [
-                            s.get("imageUrl")
-                            for s in slides
-                            if isinstance(s, dict) and s.get("imageUrl")
-                        ]
-                        if slide_urls:
-                            linkedin_id = _linkedin_document_publish(
-                                access, author_urn, post.caption, slide_urls
-                            )
-                    elif cfg_ok:
-                        image_for_share = None
-                        if fmt == "text" and post.image_url:
-                            image_for_share = post.image_url
-                        elif fmt == "image" and post.image_url and not str(
-                            post.image_url
-                        ).startswith("data:"):
-                            image_for_share = post.image_url
-                        linkedin_id = _linkedin_ugc_publish(
-                            access, author_urn, post.caption, image_for_share
-                        )
-                if not linkedin_id:
-                    linkedin_id = f"stub-li-{post.post_id}-{int(now.timestamp())}"
+                if not acct or not acct.token_payload_encrypted or not acct.author_urn:
+                    raise RuntimeError("LinkedIn account not ready for scheduled publish")
+
+                tokens = _load_tokens(acct)
+                access = tokens.get("access_token") or ""
+                allow_stub = os.environ.get("IS_LOCAL") == "true" and not os.environ.get(
+                    "LINKEDIN_CLIENT_ID"
+                )
+                linkedin_id = execute_linkedin_publish(
+                    access_token=access,
+                    author_urn=acct.author_urn,
+                    caption=post.caption or "",
+                    image_url=post.image_url,
+                    layout=layout,
+                    allow_stub=allow_stub,
+                )
 
                 post.status = "published"
                 post.linkedin_post_id = linkedin_id
@@ -93,7 +78,9 @@ def handler(event, context):
                     action="posts.scheduled_publish",
                     resource_type="content_post",
                     resource_id=str(post.post_id),
-                    detail=json.dumps({"linkedinId": linkedin_id, "publishAs": kind, "format": fmt}),
+                    detail=json.dumps(
+                        {"linkedinId": linkedin_id, "publishAs": kind, "format": fmt}
+                    ),
                 )
                 published.append(post.post_id)
                 logger.info("scheduled publish ok", {"postId": post.post_id})

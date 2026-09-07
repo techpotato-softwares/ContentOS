@@ -1,7 +1,6 @@
 """LinkedIn OAuth (member + company page) + review gate + publish."""
 from __future__ import annotations
 import base64
-import io
 import json
 import os
 from datetime import datetime, timedelta
@@ -14,6 +13,11 @@ from database import get_session
 from database.models import ContentPost, SocialAccount
 from middleware.error_handler import NotFoundError, ValidationError, AppError, create_success_response
 from utils.tenant import resolve_tenant_id, write_audit, is_super_admin
+from modules.publishing.src.linkedin_client import (
+    carousel_capability,
+    execute_linkedin_publish,
+    map_linkedin_http_error,
+)
 
 
 MEMBER_SCOPES = "openid profile w_member_social"
@@ -486,6 +490,7 @@ class PublishingController:
                     "connected": bool(primary.get("connected")),
                     "username": primary.get("username"),
                     "expiresAt": primary.get("expiresAt"),
+                    "carousel": carousel_capability(),
                 }
             )
 
@@ -711,7 +716,11 @@ class PublishingController:
             access = tokens.get("access_token")
             author_urn = acct.author_urn
             if not author_urn:
-                raise AppError("LinkedIn author URN missing — reconnect", 400, "LINKEDIN_DISCONNECTED")
+                raise AppError(
+                    "LinkedIn author URN missing — reconnect under Connections → LinkedIn.",
+                    400,
+                    "LINKEDIN_RECONNECT_REQUIRED",
+                )
 
             layout = None
             if post.layout_json:
@@ -721,51 +730,17 @@ class PublishingController:
                     layout = None
             fmt = (layout or {}).get("format") or ("text" if not post.image_url else "image")
 
-            linkedin_id = None
-            cfg_ok = bool(os.environ.get("LINKEDIN_CLIENT_ID") and access and author_urn)
-
-            if fmt == "carousel":
-                slides = (layout or {}).get("slides") or []
-                slide_urls = [
-                    s.get("imageUrl") for s in slides if isinstance(s, dict) and s.get("imageUrl")
-                ]
-                if not slide_urls:
-                    raise AppError(
-                        "Carousel has no slide images to publish",
-                        400,
-                        "CAROUSEL_EMPTY",
-                    )
-                if not cfg_ok:
-                    raise AppError(
-                        "LinkedIn is not fully configured for document carousel publish",
-                        400,
-                        "LINKEDIN_CAROUSEL_UNAVAILABLE",
-                    )
-                try:
-                    linkedin_id = _linkedin_document_publish(
-                        access, author_urn, post.caption, slide_urls
-                    )
-                except AppError:
-                    raise
-                except Exception as e:
-                    raise AppError(
-                        f"LinkedIn carousel publish unavailable: {e}",
-                        502,
-                        "LINKEDIN_CAROUSEL_UNAVAILABLE",
-                    )
-            elif cfg_ok:
-                # Text research posts: caption (+ optional supporting image)
-                # Image creatives: still publish caption; attach image when URL is fetchable
-                image_for_share = None
-                if fmt == "text" and post.image_url:
-                    image_for_share = post.image_url
-                elif fmt == "image" and post.image_url and not str(post.image_url).startswith("data:"):
-                    image_for_share = post.image_url
-                linkedin_id = _linkedin_ugc_publish(
-                    access, author_urn, post.caption, image_for_share
-                )
-            else:
-                linkedin_id = f"stub-li-{post.post_id}-{int(datetime.utcnow().timestamp())}"
+            allow_stub = os.environ.get("IS_LOCAL") == "true" and not os.environ.get(
+                "LINKEDIN_CLIENT_ID"
+            )
+            linkedin_id = execute_linkedin_publish(
+                access_token=access or "",
+                author_urn=author_urn,
+                caption=post.caption or "",
+                image_url=post.image_url,
+                layout=layout,
+                allow_stub=allow_stub,
+            )
 
             post.status = "published"
             post.linkedin_post_id = linkedin_id
@@ -887,10 +862,11 @@ def _list_organization_pages(access_token: str) -> list[dict]:
                 },
             )
         if r.status_code >= 400:
-            raise AppError(
-                f"Unable to list company pages (scopes may be missing): {r.text[:300]}",
-                502,
-                "LINKEDIN_ORG_SCOPES_UNAVAILABLE",
+            raise map_linkedin_http_error(
+                r.status_code,
+                r.text,
+                default_code="LINKEDIN_ORG_SCOPES_UNAVAILABLE",
+                context="list organizations",
             )
         elements = r.json().get("elements") or []
         for el in elements:
@@ -949,255 +925,8 @@ def _list_organization_pages(access_token: str) -> list[dict]:
     return out
 
 
-def _register_linkedin_image(client: httpx.Client, access_token: str, author_urn: str, image_bytes: bytes) -> str | None:
-    """Register + upload image asset; return asset URN or None on failure."""
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0",
-    }
-    register = {
-        "registerUploadRequest": {
-            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
-            "owner": author_urn,
-            "serviceRelationships": [
-                {
-                    "relationshipType": "OWNER",
-                    "identifier": "urn:li:userGeneratedContent",
-                }
-            ],
-        }
-    }
-    reg = client.post(
-        "https://api.linkedin.com/v2/assets?action=registerUpload",
-        headers=headers,
-        json=register,
-    )
-    if reg.status_code >= 400:
-        return None
-    value = (reg.json() or {}).get("value") or {}
-    asset = value.get("asset")
-    upload_mech = (
-        (value.get("uploadMechanism") or {})
-        .get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest")
-        or {}
-    )
-    upload_url = upload_mech.get("uploadUrl")
-    if not asset or not upload_url:
-        return None
-    up = client.put(
-        upload_url,
-        content=image_bytes,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/octet-stream",
-        },
-    )
-    if up.status_code >= 400:
-        return None
-    return asset
-
-
-def _linkedin_ugc_publish(
-    access_token: str, author_urn: str, caption: str, image_url: str | None
-) -> str:
-    """Publish text caption via LinkedIn ugcPosts; attach image when provided."""
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0",
-    }
-    share_content: dict = {
-        "shareCommentary": {"text": (caption or "")[:2900]},
-        "shareMediaCategory": "NONE",
-    }
-    with httpx.Client(timeout=120.0) as client:
-        if image_url:
-            raw = _fetch_image_bytes(image_url)
-            if raw:
-                asset = _register_linkedin_image(client, access_token, author_urn, raw)
-                if asset:
-                    share_content = {
-                        "shareCommentary": {"text": (caption or "")[:2900]},
-                        "shareMediaCategory": "IMAGE",
-                        "media": [
-                            {
-                                "status": "READY",
-                                "description": {"text": "Image"},
-                                "media": asset,
-                                "title": {"text": "Image"},
-                            }
-                        ],
-                    }
-        share = {
-            "author": author_urn,
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {"com.linkedin.ugc.ShareContent": share_content},
-            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
-        }
-        r = client.post("https://api.linkedin.com/v2/ugcPosts", headers=headers, json=share)
-        if r.status_code >= 400:
-            raise AppError(f"LinkedIn publish failed: {r.text[:400]}", 502, "LINKEDIN_ERROR")
-        return r.headers.get("x-restli-id") or r.json().get("id") or r.text[:80]
-
-
-def _slide_images_to_pdf(slide_urls: list[str]) -> bytes:
-    from PIL import Image
-
-    images = []
-    for url in slide_urls:
-        raw = _fetch_image_bytes(url)
-        if not raw:
-            continue
-        im = Image.open(io.BytesIO(raw)).convert("RGB")
-        images.append(im)
-    if not images:
-        raise AppError("Could not load carousel slide images", 400, "CAROUSEL_EMPTY")
-    buf = io.BytesIO()
-    first, rest = images[0], images[1:]
-    first.save(buf, format="PDF", save_all=True, append_images=rest)
-    return buf.getvalue()
-
-
-def _fetch_image_bytes(url: str) -> bytes | None:
-    if not url:
-        return None
-    if url.startswith("data:"):
-        try:
-            _, b64 = url.split(",", 1)
-            return base64.b64decode(b64)
-        except Exception:
-            return None
-    if url.startswith("/media/"):
-        from pathlib import Path
-
-        media_root = Path(__file__).resolve().parents[4] / "media"
-        # publishing_controller is under modules/publishing/src/controllers → parents[4]=apps/api
-        local = media_root / url[len("/media/") :]
-        if local.exists():
-            return local.read_bytes()
-        # alternate: apps/api/media
-        alt = Path(__file__).resolve().parents[4] / "media" / url[len("/media/") :]
-        if alt.exists():
-            return alt.read_bytes()
-        return None
-    if url.startswith("http://") or url.startswith("https://"):
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                r = client.get(url)
-                if r.status_code == 200:
-                    return r.content
-        except Exception:
-            return None
-    return None
-
-
-def _linkedin_document_publish(
-    access_token: str, author_urn: str, caption: str, slide_urls: list[str]
-) -> str:
-    """Stitch slides to PDF and upload as LinkedIn document (carousel)."""
-    pdf_bytes = _slide_images_to_pdf(slide_urls)
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": os.environ.get("LINKEDIN_API_VERSION", "202506"),
-    }
-    # Register upload (Documents API / assets). Try modern documents register first.
-    register_body = {
-        "initializeUploadRequest": {
-            "owner": author_urn,
-            "fileSizeBytes": len(pdf_bytes),
-        }
-    }
-    with httpx.Client(timeout=120.0) as client:
-        reg = client.post(
-            "https://api.linkedin.com/rest/documents?action=initializeUpload",
-            headers=headers,
-            json=register_body,
-        )
-        if reg.status_code >= 400:
-            raise AppError(
-                f"LinkedIn document upload not available: {reg.text[:400]}",
-                502,
-                "LINKEDIN_CAROUSEL_UNAVAILABLE",
-            )
-        value = (reg.json() or {}).get("value") or {}
-        upload_url = value.get("uploadUrl")
-        document_urn = value.get("document")
-        if not upload_url or not document_urn:
-            raise AppError(
-                "LinkedIn document initializeUpload missing uploadUrl",
-                502,
-                "LINKEDIN_CAROUSEL_UNAVAILABLE",
-            )
-        up = client.put(
-            upload_url,
-            content=pdf_bytes,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/pdf",
-            },
-        )
-        if up.status_code >= 400:
-            raise AppError(
-                f"LinkedIn document binary upload failed: {up.text[:300]}",
-                502,
-                "LINKEDIN_CAROUSEL_UNAVAILABLE",
-            )
-        # Create post referencing document
-        post_body = {
-            "author": author_urn,
-            "commentary": (caption or "")[:3000],
-            "visibility": "PUBLIC",
-            "distribution": {
-                "feedDistribution": "MAIN_FEED",
-                "targetEntities": [],
-                "thirdPartyDistributionChannels": [],
-            },
-            "content": {"media": {"id": document_urn}},
-            "lifecycleState": "PUBLISHED",
-            "isReshareDisabledByAuthor": False,
-        }
-        pr = client.post(
-            "https://api.linkedin.com/rest/posts",
-            headers=headers,
-            json=post_body,
-        )
-        if pr.status_code >= 400:
-            # Fallback UGC document share
-            ugc = {
-                "author": author_urn,
-                "lifecycleState": "PUBLISHED",
-                "specificContent": {
-                    "com.linkedin.ugc.ShareContent": {
-                        "shareCommentary": {"text": (caption or "")[:2900]},
-                        "shareMediaCategory": "ARTICLE",
-                        "media": [
-                            {
-                                "status": "READY",
-                                "media": document_urn,
-                                "title": {"text": "Carousel"},
-                            }
-                        ],
-                    }
-                },
-                "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
-            }
-            ugc_r = client.post(
-                "https://api.linkedin.com/v2/ugcPosts",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                    "X-Restli-Protocol-Version": "2.0.0",
-                },
-                json=ugc,
-            )
-            if ugc_r.status_code >= 400:
-                raise AppError(
-                    f"LinkedIn carousel post failed: {pr.text[:200]} | {ugc_r.text[:200]}",
-                    502,
-                    "LINKEDIN_CAROUSEL_UNAVAILABLE",
-                )
-            return ugc_r.headers.get("x-restli-id") or ugc_r.json().get("id") or ugc_r.text[:80]
-        return pr.headers.get("x-restli-id") or pr.json().get("id") or document_urn
+# Re-exports for scheduled_publisher / tests
+from modules.publishing.src.linkedin_client import (  # noqa: E402
+    linkedin_document_publish as _linkedin_document_publish,
+    linkedin_ugc_publish as _linkedin_ugc_publish,
+)
