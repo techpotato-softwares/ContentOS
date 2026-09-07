@@ -42,7 +42,7 @@ jobs:
       - name: Validate environment
         run: |
           case "${{ inputs.environment }}" in
-            qa|prod) echo "Deploying ApiStack-${{ inputs.environment }}" ;;
+            qa|prod) echo "Deploying ContentOS ${{ inputs.environment }}" ;;
             *) echo "Unsupported environment: ${{ inputs.environment }}"; exit 1 ;;
           esac
 
@@ -107,12 +107,22 @@ jobs:
           source .venv/bin/activate
           npx --yes aws-cdk bootstrap "aws://${CDK_DEFAULT_ACCOUNT}/${CDK_DEFAULT_REGION}"
 
+      - name: Resolve stack name
+        id: stack
+        working-directory: infra
+        run: |
+          # shellcheck disable=SC1091
+          source .venv/bin/activate
+          STACK="$(python -c "from config.environment import get_environment_config; print(get_environment_config('${{ inputs.environment }}').stack_name)")"
+          echo "name=$STACK" >> "$GITHUB_OUTPUT"
+          echo "Deploying stack: $STACK"
+
       - name: CDK deploy
         working-directory: infra
         run: |
           # shellcheck disable=SC1091
           source .venv/bin/activate
-          npx --yes aws-cdk deploy "ApiStack-${{ inputs.environment }}" --require-approval never
+          npx --yes aws-cdk deploy "${{ steps.stack.outputs.name }}" --require-approval never
 
       - name: Publish web with live API URL
         run: infra/scripts/publish-web.sh "${{ inputs.environment }}"
@@ -131,7 +141,7 @@ jobs:
 
       - name: Summary
         run: |
-          STACK="ApiStack-${{ inputs.environment }}"
+          STACK="${{ steps.stack.outputs.name }}"
           echo "### ContentOS ${{ inputs.environment }} deploy" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           aws cloudformation describe-stacks --stack-name "$STACK" \

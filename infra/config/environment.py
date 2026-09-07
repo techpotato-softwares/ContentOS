@@ -108,7 +108,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
     ),
     "qa": EnvironmentConfig(
         environment="qa",
-        stack_name="ApiStack-qa",
+        stack_name="api-stack-contentos-qa",
         description="ContentOS API - QA (shared Supabase)",
         db_secret_id=f"/{APP}/qa/db",
         log_retention_days=14,
