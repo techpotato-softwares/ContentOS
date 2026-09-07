@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Initialize DB tables and seed ContentOS roles, permissions, super admin, demo tenant."""
+"""Local/dev database bootstrap — NOT required for production self-serve signup.
+
+Creates tables and seeds demo roles, permissions, superadmin/demo users.
+Production tenants sign up via POST /api/register (transactional; bootstraps RBAC).
+"""
 from __future__ import annotations
 import os
 import sys
