@@ -184,7 +184,7 @@ export function ReviewPage() {
                       filename={`contentos-text-${p.postId}.png`}
                     />
                   )}
-                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-[140px]">
+                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-35">
                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">
                       Research text{p.imageUrl || p.attachedImage ? " + image" : ""}
                     </p>
@@ -198,7 +198,7 @@ export function ReviewPage() {
                 </div>
               ) : !p.imageUrl ? (
                 <div className="px-4 pt-4">
-                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-[140px]">
+                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-35">
                     <p className="text-sm whitespace-pre-wrap line-clamp-8">{p.caption}</p>
                   </div>
                 </div>

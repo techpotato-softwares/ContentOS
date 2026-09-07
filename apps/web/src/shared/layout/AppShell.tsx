@@ -62,12 +62,12 @@ export function AppShell() {
       )}
     >
       <div className="pointer-events-none absolute inset-0 mesh-bg" aria-hidden />
-      <aside className="glass-panel relative z-10 w-64 m-3 mr-0 rounded-3xl p-4 flex flex-col gap-4 shadow-elevated shrink-0 h-[calc(100vh-1.5rem)] sticky top-3 overflow-hidden">
+      <aside className="glass-panel z-10 w-64 m-3 mr-0 rounded-3xl p-4 flex flex-col gap-4 shadow-elevated shrink-0 h-[calc(100vh-1.5rem)] sticky top-3 overflow-hidden">
         <div className="flex items-center gap-3 px-2 shrink-0">
           {brand?.logoUrl ? (
             <img src={brand.logoUrl} alt="" className="h-10 w-10 rounded-xl object-cover ring-2 ring-primary/30" />
           ) : (
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center font-display text-primary-foreground font-semibold shadow-glow">
+            <div className="h-10 w-10 rounded-xl bg-linear-to-br from-primary to-secondary flex items-center justify-center font-display text-primary-foreground font-semibold shadow-glow">
               C
             </div>
           )}
