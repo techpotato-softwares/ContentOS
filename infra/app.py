@@ -6,7 +6,7 @@ Usage (from infra/):
   python3 -m venv .venv && source .venv/bin/activate
   pip install -r requirements.txt
   cdk synth ApiStack-dev
-  cdk deploy ApiStack-qa
+  cdk deploy api-stack-contentos-qa
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import sys
 
 from aws_cdk import App, Environment
 
+from config.environment import ENVIRONMENT_CONFIGS
 from config.environment import Environment as EnvName
 from config.environment import get_environment_config
 from stacks.api_stack import ApiStack
@@ -30,19 +31,23 @@ cdk_env = Environment(
 )
 
 all_environments: list[EnvName] = ["dev", "qa", "prod"]
+stack_names = {
+    env: ENVIRONMENT_CONFIGS[env].stack_name for env in all_environments
+}
 
 target_stack = next(
     (
         arg
         for arg in sys.argv
-        if any(f"ApiStack-{e}" in arg for e in all_environments)
+        if any(name in arg for name in stack_names.values())
     ),
     None,
 )
 
 if target_stack:
     target_env = next(
-        (e for e in all_environments if f"-{e}" in target_stack), None
+        (env for env, name in stack_names.items() if name in target_stack),
+        None,
     )
     environments_to_synthesize: list[EnvName] = (
         [target_env] if target_env else all_environments

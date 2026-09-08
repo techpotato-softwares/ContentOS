@@ -12,7 +12,6 @@ apps/api/.env
 apps/web/.env
 apps/web/.env.local
 apps/api/media/
-RequirementDocs/
 # Python
 **/__pycache__/
 **/*.py[cod]
@@ -25,6 +24,9 @@ RequirementDocs/
 # Node
 **/node_modules/
 apps/web/dist/
+apps/marketing/.next/
+apps/marketing/out/
+apps/marketing/*.tsbuildinfo
 
 # CDK / AWS
 infra/cdk.out/
@@ -38,3 +40,7 @@ infra/.cdk.staging/
 
 # Logs
 *.log
+
+# Next.js build artifacts
+**/.next/
+**/out/

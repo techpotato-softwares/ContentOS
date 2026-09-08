@@ -1,7 +1,34 @@
-# ContentOS marketing site (placeholder)
+# ContentOS marketing site
 
-Static marketing pages served at CloudFront **`/`**.
+Public marketing site for ContentOS — a B2B LinkedIn content operating system.
 
-The product SPA is served at **`/app/`**.
+Static pages are served at CloudFront **`/`**. The product SPA is served at **`/app/`**.
 
-Replace this placeholder when the full marketing site is ready — keep `index.html` at this folder root so CDK `StaticSiteConstruct` can deploy it.
+CDK deploys the Next.js static export from `out/` (`output: "export"`).
+
+## Getting started
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Production build
+
+```bash
+npm run build
+```
+
+Writes static files to `out/` for S3 / CloudFront.
+
+## Pages
+
+- `/` — Home
+- `/product` — How it works
+- `/features` — Capabilities
+- `/use-cases` — Audience solutions
+- `/pricing` — Plans
+- `/about` — Company
+- `/contact` — Request a demo
