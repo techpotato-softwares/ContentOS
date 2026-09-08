@@ -1208,7 +1208,7 @@ export function AgentPage() {
                     extracting ||
                     (!(stagedPdf || stagedUrl) && !input.trim())
                   }
-                  className="min-w-[88px]"
+                  className="min-w-22"
                   size="sm"
                 >
                   Send
@@ -1217,7 +1217,7 @@ export function AgentPage() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    className="gap-1.5 min-w-[110px]"
+                    className="gap-1.5 min-w-27.5"
                     onClick={cancelGenerate}
                   >
                     <Square className="h-3 w-3 fill-current" />
@@ -1358,7 +1358,7 @@ export function AgentPage() {
 
             {displayBatches.map((batch, bi) => (
               <div key={batch.batchId || bi} className="space-y-2">
-                <div className="flex items-center justify-between gap-2 sticky top-0 z-[1] bg-background/90 backdrop-blur-sm py-1">
+                <div className="flex items-center justify-between gap-2 sticky top-0 z-1 bg-background/90 backdrop-blur-sm py-1">
                   <div className="min-w-0">
                     <p className="text-[11px] font-medium truncate">
                       Batch #{batch.batchId}
@@ -1398,7 +1398,7 @@ export function AgentPage() {
             ))}
 
             {!displayBatches.length && !busy && (
-              <div className="h-full min-h-[200px] flex items-center justify-center text-center px-6">
+              <div className="h-full min-h-50 flex items-center justify-center text-center px-6">
                 <p className="text-sm text-muted-foreground">
                   All generated creatives for this chat appear here.
                 </p>

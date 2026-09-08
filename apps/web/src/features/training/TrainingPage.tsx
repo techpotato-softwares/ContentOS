@@ -106,7 +106,7 @@ export function TrainingPage({ adminTenantId }: { adminTenantId?: number }) {
   return (
     <div className="space-y-8 max-w-4xl">
       <div>
-        <h1 className="font-display text-3xl">Company training</h1>
+        <h1 className="font-display text-2xl md:text-3xl">Company training</h1>
         <p className="text-sm text-muted-foreground">
           Structured company records for consistent generation — not a topic allowlist.
         </p>
@@ -287,12 +287,17 @@ export function TrainingPage({ adminTenantId }: { adminTenantId?: number }) {
         </div>
       </section>
 
-      <div className="flex gap-2">
-        <Button onClick={() => void save()} disabled={putState.isLoading}>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Button className="w-full sm:w-auto" onClick={() => void save()} disabled={putState.isLoading}>
           Save training
         </Button>
         {tenantId ? (
-          <Button variant="outline" onClick={() => void loadPreview()} disabled={previewState.isLoading}>
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => void loadPreview()}
+            disabled={previewState.isLoading}
+          >
             Preview context pack
           </Button>
         ) : null}

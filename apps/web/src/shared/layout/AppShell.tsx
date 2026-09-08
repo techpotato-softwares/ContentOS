@@ -66,7 +66,7 @@ function BrandMark({
       ) : (
         <div
           className={cn(
-            "rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center font-display text-primary-foreground font-semibold shadow-glow shrink-0",
+            "rounded-xl bg-linear-to-br from-primary to-secondary flex items-center justify-center font-display text-primary-foreground font-semibold shadow-glow shrink-0",
             compact ? "h-9 w-9 text-sm" : "h-10 w-10",
           )}
         >
@@ -277,7 +277,7 @@ export function AppShell() {
               {({ isActive }) => (
                 <>
                   <l.icon className={cn("h-5 w-5", isActive && "text-primary")} />
-                  <span className="truncate max-w-[4.5rem]">{l.label}</span>
+                  <span className="truncate max-w-18">{l.label}</span>
                 </>
               )}
             </NavLink>
