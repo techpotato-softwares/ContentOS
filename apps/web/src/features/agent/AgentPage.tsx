@@ -257,6 +257,7 @@ export function AgentPage() {
   const [attachImage, setAttachImage] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
+  const [mobilePane, setMobilePane] = useState<"chats" | "brief" | "artifacts">("brief")
   const [quickPublish, quickPublishState] = useQuickPublishPostMutation()
   const { data: liStatus } = useLinkedInStatusQuery()
   const linkedInReady = Boolean(
@@ -863,18 +864,21 @@ export function AgentPage() {
           ]
         : []
 
+  const selectClass =
+    "h-11 sm:h-8 w-full sm:w-auto rounded-lg border border-border bg-background/70 px-2 text-xs min-w-0"
+
   return (
     <div className="flex flex-col h-full min-h-0 gap-3 overflow-hidden">
-      <header className="shrink-0 flex flex-wrap items-end justify-between gap-3">
-        <div>
+      <header className="shrink-0 flex flex-col sm:flex-row sm:flex-wrap sm:items-end justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="font-display text-2xl md:text-3xl leading-tight">Agent</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Brief · URL · PDF → 3 variants → score → schedule
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
           <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
+            className={selectClass}
             value={aiProvider}
             onChange={(e) => setAiProvider(e.target.value)}
             disabled={busy}
@@ -892,7 +896,7 @@ export function AgentPage() {
             ))}
           </select>
           <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
+            className={selectClass}
             value={preset}
             onChange={(e) => setPreset(e.target.value)}
             disabled={busy}
@@ -906,7 +910,7 @@ export function AgentPage() {
             )}
           </select>
           <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs max-w-[160px]"
+            className={cn(selectClass, "sm:max-w-40")}
             value={imageModel}
             onChange={(e) => setImageModel(e.target.value)}
             disabled={busy}
@@ -918,7 +922,7 @@ export function AgentPage() {
             ))}
           </select>
           <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
+            className={selectClass}
             value={renderMode}
             onChange={(e) => setRenderMode(e.target.value as "template" | "native_text")}
             disabled={busy}
@@ -929,8 +933,44 @@ export function AgentPage() {
         </div>
       </header>
 
+      <div
+        className="lg:hidden shrink-0 grid grid-cols-3 gap-1 rounded-2xl border border-border/80 bg-background/40 p-1"
+        role="tablist"
+        aria-label="Agent panes"
+      >
+        {(
+          [
+            { id: "chats" as const, label: "Chats" },
+            { id: "brief" as const, label: "Brief" },
+            { id: "artifacts" as const, label: "Artifacts" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={mobilePane === tab.id}
+            className={cn(
+              "min-h-11 rounded-xl text-xs font-medium transition-colors",
+              mobilePane === tab.id
+                ? "bg-primary text-primary-foreground shadow-glow"
+                : "text-muted-foreground hover:bg-muted/70",
+            )}
+            onClick={() => setMobilePane(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid lg:grid-cols-[200px_minmax(0,1.1fr)_minmax(0,0.95fr)] gap-3 flex-1 min-h-0 overflow-hidden">
-        <aside className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/30 p-2">
+        <aside
+          className={cn(
+            "min-h-0 flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/30 p-2",
+            mobilePane === "chats" ? "flex" : "hidden",
+            "lg:flex",
+          )}
+        >
           <div className="flex items-center justify-between px-1 shrink-0">
             <span className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
               <History className="h-3.5 w-3.5" />
@@ -945,7 +985,10 @@ export function AgentPage() {
               <button
                 key={s.sessionId}
                 type="button"
-                onClick={() => void openSession(s.sessionId)}
+                onClick={() => {
+                  void openSession(s.sessionId)
+                  setMobilePane("brief")
+                }}
                 className={cn(
                   "w-full text-left rounded-xl px-2.5 py-2 text-[11px] border border-transparent hover:bg-muted/80 transition-colors",
                   sessionId === s.sessionId && "bg-primary/12 border-primary/25",
@@ -962,13 +1005,19 @@ export function AgentPage() {
           </div>
         </aside>
 
-        <section className="relative min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/40">
+        <section
+          className={cn(
+            "relative min-h-0 flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/40",
+            mobilePane === "brief" ? "flex" : "hidden",
+            "lg:flex",
+          )}
+        >
           <div className="shrink-0 border-b border-border/60 px-3 py-2 space-y-2">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1 min-w-0">
                 <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <input
-                  className="h-8 w-full rounded-lg border border-border bg-background/70 pl-8 pr-2 text-xs"
+                  className="h-11 sm:h-8 w-full rounded-lg border border-border bg-background/70 pl-8 pr-2 text-xs"
                   placeholder="Repurpose from URL…"
                   value={repurposeUrl}
                   onChange={(e) => setRepurposeUrl(e.target.value)}
@@ -978,9 +1027,10 @@ export function AgentPage() {
                   }}
                 />
               </div>
+              <div className="flex gap-2 shrink-0">
               <Button
                 size="sm"
-                className="h-8"
+                className="h-11 sm:h-8 flex-1 sm:flex-none"
                 variant="secondary"
                 disabled={busy || !repurposeUrl.trim()}
                 onClick={() => void onRepurposeUrl()}
@@ -989,7 +1039,7 @@ export function AgentPage() {
               </Button>
               <Button
                 size="sm"
-                className="h-8"
+                className="h-11 sm:h-8 flex-1 sm:flex-none"
                 variant="outline"
                 disabled={busy}
                 onClick={() => fileRef.current?.click()}
@@ -997,6 +1047,7 @@ export function AgentPage() {
                 <FileUp className="h-3.5 w-3.5" />
                 PDF
               </Button>
+              </div>
               <input
                 ref={fileRef}
                 type="file"
@@ -1112,7 +1163,7 @@ export function AgentPage() {
               onChange={(e) => setInput(e.target.value)}
               placeholder={PLACEHOLDER_SEND}
               disabled={busy || extracting}
-              className="min-h-[72px] max-h-[120px] resize-none text-sm"
+              className="min-h-18 max-h-30 resize-none text-sm"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
@@ -1157,7 +1208,7 @@ export function AgentPage() {
                     extracting ||
                     (!(stagedPdf || stagedUrl) && !input.trim())
                   }
-                  className="min-w-[88px]"
+                  className="min-w-22"
                   size="sm"
                 >
                   Send
@@ -1166,7 +1217,7 @@ export function AgentPage() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    className="gap-1.5 min-w-[110px]"
+                    className="gap-1.5 min-w-27.5"
                     onClick={cancelGenerate}
                   >
                     <Square className="h-3 w-3 fill-current" />
@@ -1238,7 +1289,13 @@ export function AgentPage() {
           </AnimatePresence>
         </section>
 
-        <section className="min-h-0 flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/30">
+        <section
+          className={cn(
+            "min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/30",
+            mobilePane === "artifacts" ? "flex" : "hidden",
+            "lg:flex",
+          )}
+        >
           <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
             <div>
               <h2 className="font-display text-lg leading-tight">Artifacts</h2>
@@ -1301,7 +1358,7 @@ export function AgentPage() {
 
             {displayBatches.map((batch, bi) => (
               <div key={batch.batchId || bi} className="space-y-2">
-                <div className="flex items-center justify-between gap-2 sticky top-0 z-[1] bg-background/90 backdrop-blur-sm py-1">
+                <div className="flex items-center justify-between gap-2 sticky top-0 z-1 bg-background/90 backdrop-blur-sm py-1">
                   <div className="min-w-0">
                     <p className="text-[11px] font-medium truncate">
                       Batch #{batch.batchId}
@@ -1341,7 +1398,7 @@ export function AgentPage() {
             ))}
 
             {!displayBatches.length && !busy && (
-              <div className="h-full min-h-[200px] flex items-center justify-center text-center px-6">
+              <div className="h-full min-h-50 flex items-center justify-center text-center px-6">
                 <p className="text-sm text-muted-foreground">
                   All generated creatives for this chat appear here.
                 </p>

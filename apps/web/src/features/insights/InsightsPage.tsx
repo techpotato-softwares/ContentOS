@@ -19,17 +19,18 @@ export function InsightsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-3xl">Content insights</h1>
+        <h1 className="font-display text-2xl md:text-3xl">Content insights</h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Domain-aware ideas from company training and industry briefings you can feed into generation.
         </p>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="grid grid-cols-2 sm:flex gap-2 sm:flex-wrap">
         {tabs.map((t) => (
           <Button
             key={t.id}
             size="sm"
+            className="w-full sm:w-auto"
             variant={tab === t.id ? "default" : "outline"}
             onClick={() => setTab(t.id)}
           >

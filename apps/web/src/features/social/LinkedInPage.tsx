@@ -116,7 +116,7 @@ export function LinkedInPage() {
   return (
     <div className="space-y-6 max-w-xl">
       <div>
-        <h1 className="font-display text-3xl">LinkedIn</h1>
+        <h1 className="font-display text-2xl md:text-3xl">LinkedIn</h1>
         <p className="text-sm text-muted-foreground">
           Connect a personal profile for creators and a company page for B2B publishing.
         </p>
@@ -125,7 +125,7 @@ export function LinkedInPage() {
       {notice && <p className="text-sm text-primary">{notice}</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <div className="rounded-2xl border border-border p-6 space-y-3 bg-background/40">
+      <div className="rounded-2xl border border-border p-4 sm:p-6 space-y-3 bg-background/40">
         <h2 className="font-display text-xl">Personal profile</h2>
         <p className="text-sm">
           Status:{" "}
@@ -158,7 +158,7 @@ export function LinkedInPage() {
       </div>
 
       {isAdmin && (
-        <div className="rounded-2xl border border-border p-6 space-y-3 bg-background/40">
+        <div className="rounded-2xl border border-border p-4 sm:p-6 space-y-3 bg-background/40">
           <h2 className="font-display text-xl">Company page</h2>
           <p className="text-sm text-muted-foreground">
             Tenant admin / super admin only. Requires LinkedIn Community Management API.
