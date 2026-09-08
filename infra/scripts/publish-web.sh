@@ -4,8 +4,17 @@ set -euo pipefail
 
 ENV="${1:?env required (qa|prod|dev)}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-STACK="ApiStack-$ENV"
+INFRA="$ROOT/infra"
 REGION="${AWS_REGION:-${CDK_DEFAULT_REGION:-ap-south-1}}"
+# Resolve CloudFormation stack name from infra config (avoids TrendPulse ApiStack-qa collision).
+STACK="$(
+  cd "$INFRA"
+  if [[ -f .venv/bin/activate ]]; then
+    # shellcheck disable=SC1091
+    source .venv/bin/activate
+  fi
+  python -c "from config.environment import get_environment_config; print(get_environment_config('${ENV}').stack_name)"
+)"
 
 cfn_out() {
   local export_name="$1"

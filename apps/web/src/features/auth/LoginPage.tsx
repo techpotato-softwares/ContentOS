@@ -74,15 +74,15 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="min-h-dvh flex items-center justify-center p-4 sm:p-6">
       <motion.form
         onSubmit={submit}
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="glass-panel w-full max-w-md rounded-3xl p-8 space-y-5"
+        className="glass-panel w-full max-w-md rounded-3xl p-5 sm:p-8 space-y-5"
       >
         <div>
-          <h1 className="font-display text-3xl">ContentOS</h1>
+          <h1 className="font-display text-2xl sm:text-3xl">ContentOS</h1>
           <p className="text-sm text-muted-foreground mt-1">
             B2B LinkedIn image posts with company-consistent context
           </p>
