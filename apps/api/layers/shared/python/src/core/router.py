@@ -14,6 +14,12 @@ PUBLIC = {
     ("POST", "/api/login"),
     ("POST", "/api/auth/refresh"),
     ("POST", "/api/register"),
+    ("GET", "/api/auth/google/start"),
+    ("GET", "/api/auth/google/callback"),
+    ("POST", "/api/auth/google/exchange"),
+    ("GET", "/api/auth/linkedin/start"),
+    ("GET", "/api/auth/linkedin/callback"),
+    ("POST", "/api/auth/linkedin/exchange"),
     ("GET", "/api/social/linkedin/callback"),
 }
 

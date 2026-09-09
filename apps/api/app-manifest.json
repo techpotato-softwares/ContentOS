@@ -10,6 +10,12 @@
         { "method": "POST", "path": "/api/login", "controller": "AuthController", "action": "login" },
         { "method": "POST", "path": "/api/auth/refresh", "controller": "AuthController", "action": "refresh" },
         { "method": "POST", "path": "/api/register", "controller": "AuthController", "action": "register" },
+        { "method": "GET", "path": "/api/auth/google/start", "controller": "AuthController", "action": "google_start" },
+        { "method": "GET", "path": "/api/auth/google/callback", "controller": "AuthController", "action": "google_callback" },
+        { "method": "POST", "path": "/api/auth/google/exchange", "controller": "AuthController", "action": "google_exchange" },
+        { "method": "GET", "path": "/api/auth/linkedin/start", "controller": "AuthController", "action": "linkedin_start" },
+        { "method": "GET", "path": "/api/auth/linkedin/callback", "controller": "AuthController", "action": "linkedin_callback" },
+        { "method": "POST", "path": "/api/auth/linkedin/exchange", "controller": "AuthController", "action": "linkedin_exchange" },
         { "method": "GET", "path": "/api/me", "controller": "AuthController", "action": "me" }
       ]
     },

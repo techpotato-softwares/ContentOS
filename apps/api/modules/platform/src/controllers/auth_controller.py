@@ -10,13 +10,21 @@ from sqlmodel import select
 from decorators import Controller, Post, Get
 from decorators.auth_decorators import ApiPublic, RequirePermission
 from database import get_session
-from database.models import User, Role, RolePermission, Permission, Tenant
+from database.models import (
+    User,
+    Role,
+    RolePermission,
+    Permission,
+    Tenant,
+    OAuthLoginState,
+)
 from utils.webtoken import generate_tokens
 from middleware.error_handler import (
     AppError,
     ValidationError,
     ConflictError,
     create_success_response,
+    CORS,
 )
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
 
@@ -249,6 +257,242 @@ def _auth_user_dict(
     }
 
 
+def _issue_session(session, user: User) -> dict:
+    role, permission_codes = _user_permissions(session, user.role_id)
+    modules = _modules_for_tenant(session, user.tenant_id)
+    payload = _token_payload(user, role, permission_codes, modules)
+    tokens = generate_tokens(payload)
+    return {
+        "success": True,
+        **tokens,
+        "user": _auth_user_dict(user, role, permission_codes, modules),
+    }
+
+
+def _password_ok(user: User | None, password: str) -> bool:
+    if not user or not user.password:
+        return False
+    try:
+        return bool(bcrypt.verify(password, user.password))
+    except Exception:
+        return False
+
+
+def _cleanup_oauth_states(session) -> None:
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=1)
+    rows = session.exec(select(OAuthLoginState)).all()
+    for row in rows:
+        if row.consumed_at is not None or row.expires_at < now or row.created_at < cutoff:
+            session.delete(row)
+
+
+def _new_oauth_state(
+    *,
+    provider: str,
+    kind: str,
+    user_id: int | None = None,
+    ttl_seconds: int = 600,
+    nonce: str | None = None,
+) -> OAuthLoginState:
+    from datetime import datetime, timedelta
+
+    return OAuthLoginState(
+        state_id=secrets.token_urlsafe(32),
+        provider=provider,
+        kind=kind,
+        nonce=nonce,
+        user_id=user_id,
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl_seconds),
+    )
+
+
+def _oauth_frontend_error(code: str, message: str, *, frontend_base: str) -> dict:
+    from urllib.parse import urlencode
+
+    qs = urlencode({"oauthError": code, "oauthMessage": message})
+    loc = f"{frontend_base.rstrip('/')}/login?{qs}"
+    return {"statusCode": 302, "headers": {**CORS, "Location": loc}, "body": ""}
+
+
+def _google_frontend_error(code: str, message: str) -> dict:
+    from utils.google_oauth_secrets import google_frontend_redirect
+
+    return _oauth_frontend_error(
+        code, message, frontend_base=google_frontend_redirect()
+    )
+
+
+def _linkedin_frontend_error(code: str, message: str) -> dict:
+    from utils.linkedin_oidc_secrets import linkedin_oidc_frontend_redirect
+
+    return _oauth_frontend_error(
+        code, message, frontend_base=linkedin_oidc_frontend_redirect()
+    )
+
+
+def _username_from_oauth_email(email: str) -> str:
+    local = (email.split("@")[0] if email else "user").lower()
+    local = re.sub(r"[^a-z0-9._-]+", "", local)[:24] or "user"
+    return local
+
+
+def _username_from_google(email: str, name: str | None) -> str:
+    return _username_from_oauth_email(email)
+
+
+def _link_auth_provider(existing: str, provider: str) -> str:
+    raw = (existing or "password").strip()
+    parts: set[str] = set()
+    for chunk in raw.replace("+", " ").split():
+        if chunk:
+            parts.add(chunk)
+    parts.add(provider)
+    ordered: list[str] = []
+    if "password" in parts:
+        ordered.append("password")
+        parts.discard("password")
+    ordered.extend(sorted(parts))
+    return "+".join(ordered) if ordered else provider
+
+
+def _provision_oauth_tenant_user(
+    session,
+    *,
+    email: str,
+    name: str | None,
+    auth_provider: str,
+    google_sub: str | None = None,
+    linkedin_sub: str | None = None,
+) -> User:
+    role = _ensure_platform_rbac(session)
+    display = (name or email.split("@")[0] or "My Company").strip()
+    company_name = f"{display}'s workspace" if display else "My workspace"
+    slug = _unique_tenant_slug(session, company_name)
+    training = TenantTrainingSchema(
+        company=CompanySection(legal_name=company_name, display_name=company_name),
+        brand_visual=BrandVisualSection(ui_mode="platform"),
+    )
+    tenant = Tenant(
+        name=company_name,
+        slug=slug,
+        modules_enabled=json.dumps(["platform", "tenants", "agent", "publishing"]),
+        training_json=training.model_dump_json(),
+        ui_mode="platform",
+        app_display_name=company_name,
+    )
+    session.add(tenant)
+    session.flush()
+
+    base_username = _username_from_oauth_email(email)
+    username = base_username
+    n = 0
+    while session.exec(select(User).where(User.username == username)).first():
+        n += 1
+        username = f"{base_username[:20]}{n}"
+
+    user = User(
+        username=username,
+        email=email,
+        password=None,
+        auth_provider=auth_provider,
+        google_sub=google_sub,
+        linkedin_sub=linkedin_sub,
+        role_id=role.role_id,
+        tenant_id=tenant.tenant_id,
+    )
+    session.add(user)
+    session.flush()
+    return user
+
+
+def _upsert_google_user(
+    session, *, google_sub: str, email: str, name: str | None
+) -> tuple[User, str]:
+    """Return (user, outcome) where outcome is created|linked|login."""
+    email = email.strip().lower()
+    by_sub = session.exec(select(User).where(User.google_sub == google_sub)).first()
+    if by_sub:
+        return by_sub, "login"
+
+    by_email = session.exec(select(User).where(User.email == email)).first()
+    if by_email:
+        if by_email.google_sub and by_email.google_sub != google_sub:
+            raise ConflictError(
+                "This email is already linked to a different Google account. "
+                "Sign in with password or the original Google account."
+            )
+        by_email.google_sub = google_sub
+        by_email.auth_provider = _link_auth_provider(by_email.auth_provider, "google")
+        session.add(by_email)
+        session.flush()
+        return by_email, "linked"
+
+    user = _provision_oauth_tenant_user(
+        session,
+        email=email,
+        name=name,
+        auth_provider="google",
+        google_sub=google_sub,
+    )
+    return user, "created"
+
+
+def _upsert_linkedin_user(
+    session, *, linkedin_sub: str, email: str, name: str | None
+) -> tuple[User, str]:
+    """Upsert User by LinkedIn OIDC sub/email. Never creates SocialAccount."""
+    email = email.strip().lower()
+    by_sub = session.exec(
+        select(User).where(User.linkedin_sub == linkedin_sub)
+    ).first()
+    if by_sub:
+        return by_sub, "login"
+
+    by_email = session.exec(select(User).where(User.email == email)).first()
+    if by_email:
+        if by_email.linkedin_sub and by_email.linkedin_sub != linkedin_sub:
+            raise ConflictError(
+                "This email is already linked to a different LinkedIn account. "
+                "Sign in with password or the original LinkedIn account."
+            )
+        by_email.linkedin_sub = linkedin_sub
+        by_email.auth_provider = _link_auth_provider(
+            by_email.auth_provider, "linkedin"
+        )
+        session.add(by_email)
+        session.flush()
+        return by_email, "linked"
+
+    user = _provision_oauth_tenant_user(
+        session,
+        email=email,
+        name=name,
+        auth_provider="linkedin",
+        linkedin_sub=linkedin_sub,
+    )
+    return user, "created"
+
+
+def _id_token_nonce(id_token: str | None) -> str | None:
+    """Read nonce claim from OIDC id_token payload (TLS-backed token exchange)."""
+    if not id_token or id_token.count(".") < 2:
+        return None
+    import base64
+    import json as _json
+
+    try:
+        payload_b64 = id_token.split(".")[1]
+        pad = "=" * (-len(payload_b64) % 4)
+        data = _json.loads(base64.urlsafe_b64decode(payload_b64 + pad))
+        nonce = data.get("nonce")
+        return str(nonce) if nonce else None
+    except Exception:
+        return None
+
+
 @Controller(path="/api", lambda_name="auth")
 class AuthController:
     @Post("/login")
@@ -265,19 +509,398 @@ class AuthController:
                     & (User.is_active == True)
                 )
             ).first()
-            if not user or not bcrypt.verify(password, user.password):
+            if not _password_ok(user, password):
                 raise AppError("Invalid username or password", 401, "UNAUTHORIZED")
-            role, permission_codes = _user_permissions(session, user.role_id)
-            modules = _modules_for_tenant(session, user.tenant_id)
-            payload = _token_payload(user, role, permission_codes, modules)
-            tokens = generate_tokens(payload)
-            return create_success_response(
+            auth = _issue_session(session, user)
+            return create_success_response({**auth, "message": "Login successful"})
+
+    @Get("/auth/google/start")
+    @ApiPublic()
+    def google_start(self, query: dict | None = None):
+        """Begin Google OAuth — 302 to Google authorize URL with CSRF state."""
+        from utils.google_oauth import build_google_authorize_url
+        from utils.google_oauth_secrets import get_google_oauth_secrets
+
+        secrets_cfg = get_google_oauth_secrets()
+        if not secrets_cfg.client_id or not secrets_cfg.client_secret:
+            raise AppError(
+                "Google sign-in is not configured. Set GOOGLE_CLIENT_ID/SECRET "
+                "(local) or update Secrets Manager /{app}/{env}/google-oauth.",
+                503,
+                "GOOGLE_OAUTH_NOT_CONFIGURED",
+            )
+
+        with get_session() as session:
+            _cleanup_oauth_states(session)
+            state = _new_oauth_state(provider="google", kind="csrf", ttl_seconds=600)
+            session.add(state)
+            session.commit()
+            try:
+                url = build_google_authorize_url(state=state.state_id)
+            except ValueError as e:
+                raise AppError(str(e), 503, "GOOGLE_OAUTH_NOT_CONFIGURED") from e
+            return {
+                "statusCode": 302,
+                "headers": {**CORS, "Location": url},
+                "body": "",
+            }
+
+    @Get("/auth/google/callback")
+    @ApiPublic()
+    def google_callback(self, query: dict | None = None):
+        """Google redirects here. Validate state, upsert user, redirect with one-time code."""
+        from datetime import datetime
+        from urllib.parse import urlencode
+        from utils.google_oauth import exchange_google_code, fetch_google_userinfo
+        from utils.google_oauth_secrets import google_frontend_redirect
+
+        qs = query or {}
+        if qs.get("error"):
+            return _google_frontend_error(
+                "GOOGLE_DENIED",
+                str(qs.get("error_description") or qs.get("error") or "Google sign-in was cancelled"),
+            )
+
+        code = (qs.get("code") or "").strip()
+        state_id = (qs.get("state") or "").strip()
+        if not code or not state_id:
+            return _google_frontend_error("OAUTH_INVALID", "Missing OAuth code or state")
+
+        with get_session() as session:
+            state = session.get(OAuthLoginState, state_id)
+            if (
+                not state
+                or state.provider != "google"
+                or state.kind != "csrf"
+                or state.consumed_at is not None
+                or state.expires_at < datetime.utcnow()
+            ):
+                return _google_frontend_error(
+                    "OAUTH_STATE",
+                    "Invalid or expired sign-in state. Please try Google again.",
+                )
+
+            state.consumed_at = datetime.utcnow()
+            session.add(state)
+            session.commit()
+
+            try:
+                token_payload = exchange_google_code(code)
+                access = token_payload.get("access_token")
+                if not access:
+                    return _google_frontend_error(
+                        "GOOGLE_TOKEN", "Google did not return an access token"
+                    )
+                info = fetch_google_userinfo(access)
+            except ConflictError as e:
+                return _google_frontend_error("OAUTH_CONFLICT", e.message)
+            except Exception:
+                return _google_frontend_error(
+                    "GOOGLE_TOKEN",
+                    "Could not verify your Google account. Please try again.",
+                )
+
+            google_sub = str(info.get("sub") or "").strip()
+            email = str(info.get("email") or "").strip().lower()
+            email_verified = bool(info.get("email_verified"))
+            name = (info.get("name") or info.get("given_name") or "").strip() or None
+            if not google_sub or not email:
+                return _google_frontend_error(
+                    "GOOGLE_PROFILE", "Google did not provide email identity"
+                )
+            if not email_verified:
+                return _google_frontend_error(
+                    "EMAIL_UNVERIFIED",
+                    "Your Google email must be verified to continue.",
+                )
+
+            try:
+                user, outcome = _upsert_google_user(
+                    session, google_sub=google_sub, email=email, name=name
+                )
+                session.commit()
+                session.refresh(user)
+            except ConflictError as e:
+                session.rollback()
+                return _google_frontend_error("OAUTH_CONFLICT", e.message)
+            except Exception:
+                session.rollback()
+                return _google_frontend_error(
+                    "OAUTH_PROVISION",
+                    "Could not create your workspace. Please try again.",
+                )
+
+            exchange = _new_oauth_state(
+                provider="google",
+                kind="exchange",
+                user_id=user.user_id,
+                ttl_seconds=120,
+            )
+            session.add(exchange)
+            session.commit()
+
+            qs_out = urlencode(
                 {
-                    "success": True,
-                    "message": "Login successful",
-                    **tokens,
-                    "user": _auth_user_dict(user, role, permission_codes, modules),
+                    "code": exchange.state_id,
+                    "oauth": outcome,
                 }
+            )
+            loc = f"{google_frontend_redirect()}/login/oauth/callback?{qs_out}"
+            return {"statusCode": 302, "headers": {**CORS, "Location": loc}, "body": ""}
+
+    @Post("/auth/google/exchange")
+    @ApiPublic()
+    def google_exchange(self, data: dict):
+        """Exchange one-time OAuth code for the same JWT + tenant session as password login."""
+        from datetime import datetime
+
+        code = ((data or {}).get("code") or "").strip()
+        if not code:
+            raise ValidationError("code is required")
+
+        with get_session() as session:
+            row = session.get(OAuthLoginState, code)
+            if (
+                not row
+                or row.provider != "google"
+                or row.kind != "exchange"
+                or row.consumed_at is not None
+                or row.expires_at < datetime.utcnow()
+                or not row.user_id
+            ):
+                raise AppError(
+                    "Invalid or expired Google sign-in code. Please try again.",
+                    400,
+                    "OAUTH_EXCHANGE_INVALID",
+                )
+            user = session.get(User, row.user_id)
+            if not user or not user.is_active:
+                raise AppError("User account is not available", 401, "UNAUTHORIZED")
+
+            row.consumed_at = datetime.utcnow()
+            session.add(row)
+            session.commit()
+
+            auth = _issue_session(session, user)
+            return create_success_response(
+                {**auth, "message": "Google sign-in successful"}
+            )
+
+    @Get("/auth/linkedin/start")
+    @ApiPublic()
+    def linkedin_start(self, query: dict | None = None):
+        """Begin LinkedIn OIDC login — separate from publishing OAuth."""
+        from utils.linkedin_oidc import build_linkedin_oidc_authorize_url
+        from utils.linkedin_oidc_secrets import get_linkedin_oidc_secrets
+
+        secrets_cfg = get_linkedin_oidc_secrets()
+        if not secrets_cfg.client_id or not secrets_cfg.client_secret:
+            raise AppError(
+                "LinkedIn sign-in is not configured. Set LINKEDIN_OIDC_CLIENT_ID/SECRET "
+                "(local) or update Secrets Manager /{app}/{env}/linkedin-oidc.",
+                503,
+                "LINKEDIN_OIDC_NOT_CONFIGURED",
+            )
+
+        with get_session() as session:
+            _cleanup_oauth_states(session)
+            nonce = secrets.token_urlsafe(24)
+            state = _new_oauth_state(
+                provider="linkedin",
+                kind="csrf",
+                ttl_seconds=600,
+                nonce=nonce,
+            )
+            session.add(state)
+            session.commit()
+            try:
+                url = build_linkedin_oidc_authorize_url(
+                    state=state.state_id, nonce=nonce
+                )
+            except ValueError as e:
+                raise AppError(str(e), 503, "LINKEDIN_OIDC_NOT_CONFIGURED") from e
+            return {
+                "statusCode": 302,
+                "headers": {**CORS, "Location": url},
+                "body": "",
+            }
+
+    @Get("/auth/linkedin/callback")
+    @ApiPublic()
+    def linkedin_callback(self, query: dict | None = None):
+        """LinkedIn OIDC redirect. Upserts User only — never SocialAccount."""
+        from datetime import datetime
+        from urllib.parse import urlencode
+        from utils.linkedin_oidc import (
+            exchange_linkedin_oidc_code,
+            fetch_linkedin_oidc_userinfo,
+        )
+        from utils.linkedin_oidc_secrets import linkedin_oidc_frontend_redirect
+
+        qs = query or {}
+        if qs.get("error"):
+            return _linkedin_frontend_error(
+                "LINKEDIN_DENIED",
+                str(
+                    qs.get("error_description")
+                    or qs.get("error")
+                    or "LinkedIn sign-in was cancelled"
+                ),
+            )
+
+        code = (qs.get("code") or "").strip()
+        state_id = (qs.get("state") or "").strip()
+        if not code or not state_id:
+            return _linkedin_frontend_error(
+                "OAUTH_INVALID", "Missing OAuth code or state"
+            )
+
+        with get_session() as session:
+            state = session.get(OAuthLoginState, state_id)
+            if (
+                not state
+                or state.provider != "linkedin"
+                or state.kind != "csrf"
+                or state.consumed_at is not None
+                or state.expires_at < datetime.utcnow()
+            ):
+                return _linkedin_frontend_error(
+                    "OAUTH_STATE",
+                    "Invalid or expired sign-in state. Please try LinkedIn again.",
+                )
+
+            expected_nonce = state.nonce
+            state.consumed_at = datetime.utcnow()
+            session.add(state)
+            session.commit()
+
+            try:
+                token_payload = exchange_linkedin_oidc_code(code)
+                access = token_payload.get("access_token")
+                if not access:
+                    return _linkedin_frontend_error(
+                        "LINKEDIN_TOKEN",
+                        "LinkedIn did not return an access token",
+                    )
+                id_token = token_payload.get("id_token")
+                if expected_nonce:
+                    got_nonce = _id_token_nonce(
+                        id_token if isinstance(id_token, str) else None
+                    )
+                    if got_nonce is not None and got_nonce != expected_nonce:
+                        return _linkedin_frontend_error(
+                            "OAUTH_NONCE",
+                            "LinkedIn sign-in failed nonce validation. Please try again.",
+                        )
+                info = fetch_linkedin_oidc_userinfo(access)
+            except ConflictError as e:
+                return _linkedin_frontend_error("OAUTH_CONFLICT", e.message)
+            except Exception:
+                return _linkedin_frontend_error(
+                    "LINKEDIN_TOKEN",
+                    "Could not verify your LinkedIn account. Please try again.",
+                )
+
+            linkedin_sub = str(info.get("sub") or "").strip()
+            email = str(info.get("email") or "").strip().lower()
+            email_verified = info.get("email_verified")
+            # LinkedIn may return bool or string "true"
+            if isinstance(email_verified, str):
+                email_verified = email_verified.lower() in ("true", "1", "yes")
+            else:
+                email_verified = bool(email_verified)
+            name = (info.get("name") or info.get("given_name") or "").strip() or None
+            if not linkedin_sub or not email:
+                return _linkedin_frontend_error(
+                    "LINKEDIN_PROFILE",
+                    "LinkedIn did not provide email identity",
+                )
+            if not email_verified:
+                return _linkedin_frontend_error(
+                    "EMAIL_UNVERIFIED",
+                    "Your LinkedIn email must be verified to continue.",
+                )
+
+            try:
+                user, outcome = _upsert_linkedin_user(
+                    session,
+                    linkedin_sub=linkedin_sub,
+                    email=email,
+                    name=name,
+                )
+                session.commit()
+                session.refresh(user)
+            except ConflictError as e:
+                session.rollback()
+                return _linkedin_frontend_error("OAUTH_CONFLICT", e.message)
+            except Exception:
+                session.rollback()
+                return _linkedin_frontend_error(
+                    "OAUTH_PROVISION",
+                    "Could not create your workspace. Please try again.",
+                )
+
+            exchange = _new_oauth_state(
+                provider="linkedin",
+                kind="exchange",
+                user_id=user.user_id,
+                ttl_seconds=120,
+            )
+            session.add(exchange)
+            session.commit()
+
+            qs_out = urlencode(
+                {
+                    "code": exchange.state_id,
+                    "oauth": outcome,
+                }
+            )
+            loc = (
+                f"{linkedin_oidc_frontend_redirect()}"
+                f"/login/oauth/linkedin/callback?{qs_out}"
+            )
+            return {
+                "statusCode": 302,
+                "headers": {**CORS, "Location": loc},
+                "body": "",
+            }
+
+    @Post("/auth/linkedin/exchange")
+    @ApiPublic()
+    def linkedin_exchange(self, data: dict):
+        """Exchange one-time LinkedIn OIDC code for JWT/session (same as Google/password)."""
+        from datetime import datetime
+
+        code = ((data or {}).get("code") or "").strip()
+        if not code:
+            raise ValidationError("code is required")
+
+        with get_session() as session:
+            row = session.get(OAuthLoginState, code)
+            if (
+                not row
+                or row.provider != "linkedin"
+                or row.kind != "exchange"
+                or row.consumed_at is not None
+                or row.expires_at < datetime.utcnow()
+                or not row.user_id
+            ):
+                raise AppError(
+                    "Invalid or expired LinkedIn sign-in code. Please try again.",
+                    400,
+                    "OAUTH_EXCHANGE_INVALID",
+                )
+            user = session.get(User, row.user_id)
+            if not user or not user.is_active:
+                raise AppError("User account is not available", 401, "UNAUTHORIZED")
+
+            row.consumed_at = datetime.utcnow()
+            session.add(row)
+            session.commit()
+
+            auth = _issue_session(session, user)
+            return create_success_response(
+                {**auth, "message": "LinkedIn sign-in successful"}
             )
 
     @Post("/auth/refresh")
@@ -375,6 +998,7 @@ class AuthController:
                     username=username,
                     email=email,
                     password=bcrypt.hash(password),
+                    auth_provider="password",
                     role_id=role.role_id,
                     tenant_id=tenant.tenant_id,
                 )
