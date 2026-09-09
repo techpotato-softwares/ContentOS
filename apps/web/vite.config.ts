@@ -85,9 +85,10 @@ export default defineConfig({
           },
         ],
       },
-      // Dev SW can confuse installability testing; enable for local PWA checks.
+      // Dev SW often 500s if sw.js isn't generated yet and blocks the UI with Vite overlay.
+      // Enable only when intentionally testing installability locally.
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: "module",
         navigateFallback: "index.html",
       },

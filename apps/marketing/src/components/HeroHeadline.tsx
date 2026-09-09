@@ -8,19 +8,40 @@ const LINES = [
   "On-brand posts in minutes — not blank-page Mondays.",
 ];
 
-const TYPE_MS = 38;
-const HOLD_MS = 2400;
-const DELETE_MS = 18;
+const TYPE_MS = 42;
+const HOLD_MS = 2600;
+const DELETE_MS = 22;
 const GAP_MS = 420;
+const START_DELAY_MS = 1600;
 
 export function HeroHeadline() {
   const [lineIndex, setLineIndex] = useState(0);
-  const [text, setText] = useState("");
-  const [phase, setPhase] = useState<"typing" | "holding" | "deleting">("typing");
+  const [text, setText] = useState(LINES[0]);
+  const [phase, setPhase] = useState<"idle" | "typing" | "holding" | "deleting">("idle");
 
   const full = LINES[lineIndex];
 
   useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
+
+    let startTimer = 0;
+    const kickoff = () => {
+      setPhase("holding");
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(kickoff, { timeout: START_DELAY_MS });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    startTimer = window.setTimeout(kickoff, START_DELAY_MS);
+    return () => window.clearTimeout(startTimer);
+  }, []);
+
+  useEffect(() => {
+    if (phase === "idle") return;
+
     let timer: number;
 
     if (phase === "typing") {
