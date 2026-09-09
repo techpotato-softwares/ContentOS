@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom"
 import { useAppSelector } from "@/app/hooks"
 import { AppShell } from "@/shared/layout/AppShell"
+import { InstallPrompt } from "@/shared/pwa/InstallPrompt"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { GoogleOAuthCallbackPage } from "@/features/auth/GoogleOAuthCallbackPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
@@ -41,11 +42,29 @@ export function AppRouter() {
         <Route path="connections/linkedin" element={<LinkedInPage />} />
         <Route path="admin/tenants" element={<AdminTenantsPage />} />
         <Route
-          path="admin/tenants/:id/training"
-          element={<TrainingPage />}
-        />
-      </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+          path="/"
+          element={
+            <Protected>
+              <AppShell />
+            </Protected>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="agent" element={<AgentPage />} />
+          <Route path="insights" element={<InsightsPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="review" element={<ReviewPage />} />
+          <Route path="settings/training" element={<TrainingPage />} />
+          <Route path="connections/linkedin" element={<LinkedInPage />} />
+          <Route path="admin/tenants" element={<AdminTenantsPage />} />
+          <Route
+            path="admin/tenants/:id/training"
+            element={<TrainingPage />}
+          />
+        </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </>
   )
 }

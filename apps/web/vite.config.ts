@@ -18,21 +18,43 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "icons.svg", "apple-touch-icon.png"],
+      includeAssets: [
+        "favicon.svg",
+        "icons.svg",
+        "apple-touch-icon.png",
+        "pwa-192.png",
+        "pwa-512.png",
+        "pwa-512-maskable.png",
+      ],
       manifest: {
+        id: "/",
         name: "ContentOS",
         short_name: "ContentOS",
         description: "B2B LinkedIn image content operating system",
         theme_color: "#0d9488",
         background_color: "#f4f7f6",
         display: "standalone",
-        orientation: "portrait-primary",
+        display_override: ["standalone", "browser"],
+        orientation: "any",
+        start_url: "./",
+        scope: "./",
+        lang: "en",
         categories: ["business", "productivity"],
         icons: [
-          { src: "pwa-192.png", sizes: "192x192", type: "image/png" },
-          { src: "pwa-512.png", sizes: "512x512", type: "image/png" },
+          {
+            src: "pwa-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
           {
             src: "pwa-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "pwa-512-maskable.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
@@ -43,6 +65,9 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webmanifest}"],
         navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/api/, /^\/health/, /^\/media/],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         runtimeCaching: [
           {
             urlPattern: ({ url }) =>
@@ -55,11 +80,17 @@ export default defineConfig({
                 maxEntries: 20,
                 maxAgeSeconds: 60 * 60 * 24 * 365,
               },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],
       },
-      devOptions: { enabled: true },
+      // Dev SW can confuse installability testing; enable for local PWA checks.
+      devOptions: {
+        enabled: true,
+        type: "module",
+        navigateFallback: "index.html",
+      },
     }),
   ],
   resolve: {
