@@ -13,6 +13,8 @@ from utils.logger import logger
 PUBLIC = {
     ("POST", "/api/login"),
     ("POST", "/api/auth/refresh"),
+    ("POST", "/api/auth/otp/request"),
+    ("POST", "/api/auth/otp/verify"),
     ("POST", "/api/register"),
     ("GET", "/api/social/linkedin/callback"),
 }

@@ -113,6 +113,27 @@ class ApiStack(Stack):
             db_host=db_host,
         )
 
+        # Auth Lambda needs SES for passwordless email OTP login
+        auth_fn = lambda_construct.functions.get("auth")
+        if auth_fn:
+            from aws_cdk import aws_iam as iam
+
+            auth_fn.add_environment(
+                "SES_ENABLED",
+                os.environ.get("SES_ENABLED", "true"),
+            )
+            auth_fn.add_environment(
+                "SES_FROM_EMAIL",
+                os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app"),
+            )
+            auth_fn.add_to_role_policy(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["ses:SendEmail", "ses:SendRawEmail"],
+                    resources=["*"],
+                )
+            )
+
         static_site: StaticSiteConstruct | None = None
         cloudfront_url: str | None = None
         if config.features.static_site:
