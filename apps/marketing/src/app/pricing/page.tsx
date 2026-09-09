@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { appLoginUrl } from "@/lib/appUrl";
 import { FaqAccordion } from "@/components/FaqAccordion";
 import { PageHero } from "@/components/PageHero";
 import { MarketingCTA } from "@/components/MarketingCTA";
@@ -7,7 +8,7 @@ import { Reveal } from "@/components/Reveal";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "ContentOS plans for teams, agencies, and growing brands. Request a demo to get started.",
+  description: "ContentOS plans for teams, agencies, and growing brands. Start free to get going.",
 };
 
 const plans = [
@@ -22,7 +23,7 @@ const plans = [
       "Human review queue",
       "LinkedIn publish & schedule",
     ],
-    cta: "Request starter demo",
+    cta: "Start Free",
     highlighted: false,
   },
   {
@@ -37,7 +38,7 @@ const plans = [
       "Shared review workflows",
       "Priority onboarding",
     ],
-    cta: "Request team demo",
+    cta: "Start Free",
     highlighted: true,
   },
   {
@@ -59,7 +60,7 @@ const plans = [
 const faqs = [
   {
     q: "Is pricing public?",
-    a: "Launch plans are demo-led while we finalize packaging. Request a demo and we'll map the right tier to your volume and team size.",
+    a: "Launch plans are flexible while we finalize packaging. Start free and we'll map the right tier to your volume and team size.",
   },
   {
     q: "Do posts publish automatically?",
@@ -81,8 +82,8 @@ export default function PricingPage() {
       <PageHero
         eyebrow="Pricing"
         title="Plans that grow with your LinkedIn operation."
-        description="Every plan starts with a demo so we size the workspace to your brands, seats, and posting volume — then you pick the right tier."
-        primaryCta={{ href: "/contact", label: "Book a demo" }}
+        description="Every plan starts free so you can size the workspace to your brands, seats, and posting volume — then pick the right tier."
+        primaryCta={{ href: appLoginUrl(), label: "Start Free" }}
         secondaryCta={{ href: "/features", label: "See features" }}
       />
 
@@ -94,7 +95,7 @@ export default function PricingPage() {
           </p>
           <p className="flex items-center justify-center gap-2">
             <span className="trust-chip-dot" />
-            Demo-led onboarding
+            Free to start
           </p>
           <p className="flex items-center justify-center gap-2">
             <span className="trust-chip-dot" />
@@ -131,9 +132,13 @@ export default function PricingPage() {
                   ))}
                 </ul>
                 <Link
-                  href="/contact"
+                  href={plan.cta === "Talk to sales" ? "/contact" : appLoginUrl()}
                   className={
-                    plan.highlighted ? "btn-primary btn-demo mt-8" : "btn-secondary mt-8"
+                    plan.highlighted
+                      ? "btn-primary btn-demo mt-8"
+                      : plan.cta === "Start Free"
+                        ? "btn-secondary btn-demo mt-8"
+                        : "btn-secondary mt-8"
                   }
                 >
                   {plan.cta}

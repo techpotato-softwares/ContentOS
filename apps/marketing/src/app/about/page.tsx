@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { appLoginUrl } from "@/lib/appUrl";
 import { PageHero } from "@/components/PageHero";
 import { MarketingCTA } from "@/components/MarketingCTA";
+import { MarketingImage } from "@/components/MarketingImage";
 import { Reveal } from "@/components/Reveal";
 
 export const metadata: Metadata = {
@@ -32,7 +34,7 @@ export default function AboutPage() {
         eyebrow="About"
         title="Built by operators who hate blank-page Mondays."
         description="ContentOS is a product of TechPotato Softwares LLP. We build software that helps teams publish consistently — without handing brand voice over to generic AI."
-        primaryCta={{ href: "/contact", label: "Book a demo" }}
+        primaryCta={{ href: appLoginUrl(), label: "Start Free" }}
         secondaryCta={{ href: "/product", label: "See the product" }}
       />
 
@@ -48,6 +50,16 @@ export default function AboutPage() {
               trains on your brand, drafts with an AI agent, and keeps humans in the approval loop —
               so reach grows without voice drift.
             </p>
+            <MarketingImage
+              src="/images/product-review.webp"
+              alt="ContentOS product workspace for brand-trained LinkedIn drafts"
+              variant="panel"
+              badge="Product"
+              eyebrow="Brand-trained drafts"
+              caption="Less research theater. More publishing."
+              className="mt-8 aspect-[4/3] w-full"
+              sizes="(max-width: 1024px) 100vw, 50vw"
+            />
           </Reveal>
           <Reveal delay={120}>
             <div className="glass-card rounded-2xl border border-[var(--line)] p-8">
@@ -104,7 +116,7 @@ export default function AboutPage() {
 
       <MarketingCTA
         title="Build your LinkedIn OS with us."
-        description="Book a demo and see how ContentOS fits your team, brands, and weekly cadence."
+        description="Start free and see how ContentOS fits your team, brands, and weekly cadence."
       />
     </>
   );
