@@ -13,7 +13,7 @@ type LoginResponse = {
 export function apiOrigin(): string {
   const raw = (import.meta.env.VITE_API_URL as string | undefined) || ""
   if (raw) return raw.replace(/\/$/, "")
-  if (typeof window !== "undefined") return window.location.origin
+  // Dev: leave empty so browser hits Vite proxy (/api → :4001)
   return ""
 }
 
