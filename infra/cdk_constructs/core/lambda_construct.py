@@ -103,6 +103,13 @@ class LambdaConstruct(Construct):
             "GEMINI_MODEL": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             "LINKEDIN_REDIRECT_URI": os.environ.get("LINKEDIN_REDIRECT_URI", ""),
             "LINKEDIN_FRONTEND_REDIRECT": os.environ.get("LINKEDIN_FRONTEND_REDIRECT", ""),
+            "GOOGLE_OAUTH_SECRET_ID": config.jwt.secret_id.replace(
+                "/jwt", "/google-oauth"
+            ),
+            "GOOGLE_REDIRECT_URI": os.environ.get("GOOGLE_REDIRECT_URI", ""),
+            "GOOGLE_FRONTEND_REDIRECT": os.environ.get(
+                "GOOGLE_FRONTEND_REDIRECT", ""
+            ),
         }
         if config.environment == "dev":
             environment.update(_load_local_env_vars())
