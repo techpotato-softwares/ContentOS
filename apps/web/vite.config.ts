@@ -10,29 +10,58 @@ const apiProxy = {
   "/media": "http://localhost:4001",
 }
 
+/**
+ * Chrome/Edge Android show ⋮ → “Install app” only when installability criteria pass:
+ * HTTPS (or localhost), valid manifest, SW with fetch handler, 192+512 PNG icons.
+ */
 export default defineConfig({
-  // Deployed: VITE_BASE=/app/  |  Local default: /
   base: process.env.VITE_BASE || "/",
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "icons.svg", "apple-touch-icon.png"],
+      injectRegister: null, // we register explicitly in main.tsx
+      includeAssets: [
+        "favicon.svg",
+        "icons.svg",
+        "apple-touch-icon.png",
+        "pwa-192.png",
+        "pwa-512.png",
+        "pwa-512-maskable.png",
+      ],
       manifest: {
         name: "ContentOS",
         short_name: "ContentOS",
         description: "B2B LinkedIn image content operating system",
+        lang: "en",
+        dir: "ltr",
+        start_url: "./",
+        scope: "./",
+        id: "./",
+        display: "standalone",
+        // Installed icon → app window; same URL in Chrome tab → normal website
+        display_override: ["standalone", "minimal-ui", "browser"],
+        orientation: "any",
         theme_color: "#0d9488",
         background_color: "#f4f7f6",
-        display: "standalone",
-        orientation: "portrait-primary",
+        prefer_related_applications: false,
         categories: ["business", "productivity"],
         icons: [
-          { src: "pwa-192.png", sizes: "192x192", type: "image/png" },
-          { src: "pwa-512.png", sizes: "512x512", type: "image/png" },
+          {
+            src: "pwa-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
           {
             src: "pwa-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "pwa-512-maskable.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
@@ -43,6 +72,9 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webmanifest}"],
         navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/api/, /^\/health/, /^\/media/],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         runtimeCaching: [
           {
             urlPattern: ({ url }) =>
@@ -55,11 +87,17 @@ export default defineConfig({
                 maxEntries: 20,
                 maxAgeSeconds: 60 * 60 * 24 * 365,
               },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],
       },
-      devOptions: { enabled: true },
+      // Localhost PWA install testing (Chrome treats localhost as secure)
+      devOptions: {
+        enabled: true,
+        type: "module",
+        navigateFallback: "index.html",
+      },
     }),
   ],
   resolve: {
