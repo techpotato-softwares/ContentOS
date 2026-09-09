@@ -25,17 +25,11 @@ export function HeroHeadline() {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) return;
 
-    let startTimer = 0;
     const kickoff = () => {
       setPhase("holding");
     };
 
-    if ("requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(kickoff, { timeout: START_DELAY_MS });
-      return () => window.cancelIdleCallback(idleId);
-    }
-
-    startTimer = window.setTimeout(kickoff, START_DELAY_MS);
+    const startTimer = window.setTimeout(kickoff, START_DELAY_MS);
     return () => window.clearTimeout(startTimer);
   }, []);
 

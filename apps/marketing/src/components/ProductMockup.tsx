@@ -87,10 +87,6 @@ export function ProductMockup({ className = "" }: { className?: string }) {
     if (reduced) return;
 
     const start = () => setActive(true);
-    if ("requestIdleCallback" in window) {
-      const id = window.requestIdleCallback(start, { timeout: 2000 });
-      return () => window.cancelIdleCallback(id);
-    }
     const t = window.setTimeout(start, 1200);
     return () => window.clearTimeout(t);
   }, []);
