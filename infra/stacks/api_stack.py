@@ -202,6 +202,16 @@ class ApiStack(Stack):
         )
         permission_providers.append(jwt_secrets)
 
+        print("\n🔐 Creating Google OAuth secrets (0055 hygiene)...")
+        from cdk_constructs.security.google_oauth_secrets_construct import (
+            GoogleOAuthSecretsConstruct,
+        )
+
+        google_oauth_secrets = GoogleOAuthSecretsConstruct(
+            self, "GoogleOAuthSecretsConstruct", config=config
+        )
+        permission_providers.append(google_oauth_secrets)
+
         if permission_providers:
             print("\n🔐 Applying permissions to Lambda functions...")
             all_fns = {**lambda_construct.functions}

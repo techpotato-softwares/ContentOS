@@ -32,6 +32,7 @@ class User(SQLModel, table=True):
     """App user. Tenant membership is ``tenant_id`` + ``role_id`` (no separate join table).
 
     Self-serve signup creates User + Tenant with ``tenant_admin`` role atomically.
+    Google OAuth users may have ``password`` unset and ``google_sub`` set.
     """
 
     __tablename__ = "users"
@@ -39,11 +40,28 @@ class User(SQLModel, table=True):
     tenant_id: Optional[int] = Field(default=None, foreign_key="tenants.tenant_id", index=True)
     username: str = Field(unique=True, index=True)
     email: str = Field(unique=True, index=True)
-    password: str
+    password: Optional[str] = None
+    # password | google (primary signup path); password login still works when password set
+    auth_provider: str = Field(default="password", index=True)
+    google_sub: Optional[str] = Field(default=None, unique=True, index=True)
     role_id: Optional[int] = Field(default=None, foreign_key="roles.role_id")
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class OAuthLoginState(SQLModel, table=True):
+    """CSRF state + one-time post-callback exchange codes for Google OAuth login."""
+
+    __tablename__ = "oauth_login_states"
+    state_id: str = Field(primary_key=True)
+    provider: str = Field(default="google", index=True)
+    # csrf (pre-callback) | exchange (post-callback, redeem for JWT)
+    kind: str = Field(default="csrf", index=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.user_id")
+    expires_at: datetime = Field(index=True)
+    consumed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Role(SQLModel, table=True):

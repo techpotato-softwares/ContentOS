@@ -10,6 +10,9 @@
         { "method": "POST", "path": "/api/login", "controller": "AuthController", "action": "login" },
         { "method": "POST", "path": "/api/auth/refresh", "controller": "AuthController", "action": "refresh" },
         { "method": "POST", "path": "/api/register", "controller": "AuthController", "action": "register" },
+        { "method": "GET", "path": "/api/auth/google/start", "controller": "AuthController", "action": "google_start" },
+        { "method": "GET", "path": "/api/auth/google/callback", "controller": "AuthController", "action": "google_callback" },
+        { "method": "POST", "path": "/api/auth/google/exchange", "controller": "AuthController", "action": "google_exchange" },
         { "method": "GET", "path": "/api/me", "controller": "AuthController", "action": "me" }
       ]
     },

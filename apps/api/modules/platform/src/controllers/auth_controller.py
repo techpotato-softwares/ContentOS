@@ -10,13 +10,21 @@ from sqlmodel import select
 from decorators import Controller, Post, Get
 from decorators.auth_decorators import ApiPublic, RequirePermission
 from database import get_session
-from database.models import User, Role, RolePermission, Permission, Tenant
+from database.models import (
+    User,
+    Role,
+    RolePermission,
+    Permission,
+    Tenant,
+    OAuthLoginState,
+)
 from utils.webtoken import generate_tokens
 from middleware.error_handler import (
     AppError,
     ValidationError,
     ConflictError,
     create_success_response,
+    CORS,
 )
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
 
@@ -249,6 +257,132 @@ def _auth_user_dict(
     }
 
 
+def _issue_session(session, user: User) -> dict:
+    role, permission_codes = _user_permissions(session, user.role_id)
+    modules = _modules_for_tenant(session, user.tenant_id)
+    payload = _token_payload(user, role, permission_codes, modules)
+    tokens = generate_tokens(payload)
+    return {
+        "success": True,
+        **tokens,
+        "user": _auth_user_dict(user, role, permission_codes, modules),
+    }
+
+
+def _password_ok(user: User | None, password: str) -> bool:
+    if not user or not user.password:
+        return False
+    try:
+        return bool(bcrypt.verify(password, user.password))
+    except Exception:
+        return False
+
+
+def _cleanup_oauth_states(session) -> None:
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=1)
+    rows = session.exec(select(OAuthLoginState)).all()
+    for row in rows:
+        if row.consumed_at is not None or row.expires_at < now or row.created_at < cutoff:
+            session.delete(row)
+
+
+def _new_oauth_state(
+    *, kind: str, user_id: int | None = None, ttl_seconds: int = 600
+) -> OAuthLoginState:
+    from datetime import datetime, timedelta
+
+    return OAuthLoginState(
+        state_id=secrets.token_urlsafe(32),
+        provider="google",
+        kind=kind,
+        user_id=user_id,
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl_seconds),
+    )
+
+
+def _google_frontend_error(code: str, message: str) -> dict:
+    from urllib.parse import urlencode
+    from utils.google_oauth_secrets import google_frontend_redirect
+
+    qs = urlencode({"oauthError": code, "oauthMessage": message})
+    loc = f"{google_frontend_redirect()}/login?{qs}"
+    return {"statusCode": 302, "headers": {**CORS, "Location": loc}, "body": ""}
+
+
+def _username_from_google(email: str, name: str | None) -> str:
+    local = (email.split("@")[0] if email else "user").lower()
+    local = re.sub(r"[^a-z0-9._-]+", "", local)[:24] or "user"
+    return local
+
+
+def _upsert_google_user(
+    session, *, google_sub: str, email: str, name: str | None
+) -> tuple[User, str]:
+    """Return (user, outcome) where outcome is created|linked|login."""
+    email = email.strip().lower()
+    by_sub = session.exec(select(User).where(User.google_sub == google_sub)).first()
+    if by_sub:
+        return by_sub, "login"
+
+    by_email = session.exec(select(User).where(User.email == email)).first()
+    if by_email:
+        if by_email.google_sub and by_email.google_sub != google_sub:
+            raise ConflictError(
+                "This email is already linked to a different Google account. "
+                "Sign in with password or the original Google account."
+            )
+        by_email.google_sub = google_sub
+        if by_email.auth_provider == "password":
+            by_email.auth_provider = "password+google"
+        else:
+            by_email.auth_provider = "google"
+        session.add(by_email)
+        session.flush()
+        return by_email, "linked"
+
+    role = _ensure_platform_rbac(session)
+    display = (name or email.split("@")[0] or "My Company").strip()
+    company_name = f"{display}'s workspace" if display else "My workspace"
+    slug = _unique_tenant_slug(session, company_name)
+    training = TenantTrainingSchema(
+        company=CompanySection(legal_name=company_name, display_name=company_name),
+        brand_visual=BrandVisualSection(ui_mode="platform"),
+    )
+    tenant = Tenant(
+        name=company_name,
+        slug=slug,
+        modules_enabled=json.dumps(["platform", "tenants", "agent", "publishing"]),
+        training_json=training.model_dump_json(),
+        ui_mode="platform",
+        app_display_name=company_name,
+    )
+    session.add(tenant)
+    session.flush()
+
+    base_username = _username_from_google(email, name)
+    username = base_username
+    n = 0
+    while session.exec(select(User).where(User.username == username)).first():
+        n += 1
+        username = f"{base_username[:20]}{n}"
+
+    user = User(
+        username=username,
+        email=email,
+        password=None,
+        auth_provider="google",
+        google_sub=google_sub,
+        role_id=role.role_id,
+        tenant_id=tenant.tenant_id,
+    )
+    session.add(user)
+    session.flush()
+    return user, "created"
+
+
 @Controller(path="/api", lambda_name="auth")
 class AuthController:
     @Post("/login")
@@ -265,19 +399,178 @@ class AuthController:
                     & (User.is_active == True)
                 )
             ).first()
-            if not user or not bcrypt.verify(password, user.password):
+            if not _password_ok(user, password):
                 raise AppError("Invalid username or password", 401, "UNAUTHORIZED")
-            role, permission_codes = _user_permissions(session, user.role_id)
-            modules = _modules_for_tenant(session, user.tenant_id)
-            payload = _token_payload(user, role, permission_codes, modules)
-            tokens = generate_tokens(payload)
-            return create_success_response(
+            auth = _issue_session(session, user)
+            return create_success_response({**auth, "message": "Login successful"})
+
+    @Get("/auth/google/start")
+    @ApiPublic()
+    def google_start(self, query: dict | None = None):
+        """Begin Google OAuth — 302 to Google authorize URL with CSRF state."""
+        from utils.google_oauth import build_google_authorize_url
+        from utils.google_oauth_secrets import get_google_oauth_secrets
+
+        secrets_cfg = get_google_oauth_secrets()
+        if not secrets_cfg.client_id or not secrets_cfg.client_secret:
+            raise AppError(
+                "Google sign-in is not configured. Set GOOGLE_CLIENT_ID/SECRET "
+                "(local) or update Secrets Manager /{app}/{env}/google-oauth.",
+                503,
+                "GOOGLE_OAUTH_NOT_CONFIGURED",
+            )
+
+        with get_session() as session:
+            _cleanup_oauth_states(session)
+            state = _new_oauth_state(kind="csrf", ttl_seconds=600)
+            session.add(state)
+            session.commit()
+            try:
+                url = build_google_authorize_url(state=state.state_id)
+            except ValueError as e:
+                raise AppError(str(e), 503, "GOOGLE_OAUTH_NOT_CONFIGURED") from e
+            return {
+                "statusCode": 302,
+                "headers": {**CORS, "Location": url},
+                "body": "",
+            }
+
+    @Get("/auth/google/callback")
+    @ApiPublic()
+    def google_callback(self, query: dict | None = None):
+        """Google redirects here. Validate state, upsert user, redirect with one-time code."""
+        from datetime import datetime
+        from urllib.parse import urlencode
+        from utils.google_oauth import exchange_google_code, fetch_google_userinfo
+        from utils.google_oauth_secrets import google_frontend_redirect
+
+        qs = query or {}
+        if qs.get("error"):
+            return _google_frontend_error(
+                "GOOGLE_DENIED",
+                str(qs.get("error_description") or qs.get("error") or "Google sign-in was cancelled"),
+            )
+
+        code = (qs.get("code") or "").strip()
+        state_id = (qs.get("state") or "").strip()
+        if not code or not state_id:
+            return _google_frontend_error("OAUTH_INVALID", "Missing OAuth code or state")
+
+        with get_session() as session:
+            state = session.get(OAuthLoginState, state_id)
+            if (
+                not state
+                or state.provider != "google"
+                or state.kind != "csrf"
+                or state.consumed_at is not None
+                or state.expires_at < datetime.utcnow()
+            ):
+                return _google_frontend_error(
+                    "OAUTH_STATE",
+                    "Invalid or expired sign-in state. Please try Google again.",
+                )
+
+            state.consumed_at = datetime.utcnow()
+            session.add(state)
+            session.commit()
+
+            try:
+                token_payload = exchange_google_code(code)
+                access = token_payload.get("access_token")
+                if not access:
+                    return _google_frontend_error(
+                        "GOOGLE_TOKEN", "Google did not return an access token"
+                    )
+                info = fetch_google_userinfo(access)
+            except ConflictError as e:
+                return _google_frontend_error("OAUTH_CONFLICT", e.message)
+            except Exception:
+                return _google_frontend_error(
+                    "GOOGLE_TOKEN",
+                    "Could not verify your Google account. Please try again.",
+                )
+
+            google_sub = str(info.get("sub") or "").strip()
+            email = str(info.get("email") or "").strip().lower()
+            email_verified = bool(info.get("email_verified"))
+            name = (info.get("name") or info.get("given_name") or "").strip() or None
+            if not google_sub or not email:
+                return _google_frontend_error(
+                    "GOOGLE_PROFILE", "Google did not provide email identity"
+                )
+            if not email_verified:
+                return _google_frontend_error(
+                    "EMAIL_UNVERIFIED",
+                    "Your Google email must be verified to continue.",
+                )
+
+            try:
+                user, outcome = _upsert_google_user(
+                    session, google_sub=google_sub, email=email, name=name
+                )
+                session.commit()
+                session.refresh(user)
+            except ConflictError as e:
+                session.rollback()
+                return _google_frontend_error("OAUTH_CONFLICT", e.message)
+            except Exception:
+                session.rollback()
+                return _google_frontend_error(
+                    "OAUTH_PROVISION",
+                    "Could not create your workspace. Please try again.",
+                )
+
+            exchange = _new_oauth_state(
+                kind="exchange", user_id=user.user_id, ttl_seconds=120
+            )
+            session.add(exchange)
+            session.commit()
+
+            qs_out = urlencode(
                 {
-                    "success": True,
-                    "message": "Login successful",
-                    **tokens,
-                    "user": _auth_user_dict(user, role, permission_codes, modules),
+                    "code": exchange.state_id,
+                    "oauth": outcome,
                 }
+            )
+            loc = f"{google_frontend_redirect()}/login/oauth/callback?{qs_out}"
+            return {"statusCode": 302, "headers": {**CORS, "Location": loc}, "body": ""}
+
+    @Post("/auth/google/exchange")
+    @ApiPublic()
+    def google_exchange(self, data: dict):
+        """Exchange one-time OAuth code for the same JWT + tenant session as password login."""
+        from datetime import datetime
+
+        code = ((data or {}).get("code") or "").strip()
+        if not code:
+            raise ValidationError("code is required")
+
+        with get_session() as session:
+            row = session.get(OAuthLoginState, code)
+            if (
+                not row
+                or row.provider != "google"
+                or row.kind != "exchange"
+                or row.consumed_at is not None
+                or row.expires_at < datetime.utcnow()
+                or not row.user_id
+            ):
+                raise AppError(
+                    "Invalid or expired Google sign-in code. Please try again.",
+                    400,
+                    "OAUTH_EXCHANGE_INVALID",
+                )
+            user = session.get(User, row.user_id)
+            if not user or not user.is_active:
+                raise AppError("User account is not available", 401, "UNAUTHORIZED")
+
+            row.consumed_at = datetime.utcnow()
+            session.add(row)
+            session.commit()
+
+            auth = _issue_session(session, user)
+            return create_success_response(
+                {**auth, "message": "Google sign-in successful"}
             )
 
     @Post("/auth/refresh")
@@ -375,6 +668,7 @@ class AuthController:
                     username=username,
                     email=email,
                     password=bcrypt.hash(password),
+                    auth_provider="password",
                     role_id=role.role_id,
                     tenant_id=tenant.tenant_id,
                 )
