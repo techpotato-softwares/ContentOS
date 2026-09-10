@@ -319,6 +319,7 @@ class AuthController:
         username = (body.get("username") or "").strip()
         email = (body.get("email") or "").strip().lower()
         password = body.get("password")
+        invite_token = (body.get("inviteToken") or body.get("invite_token") or "").strip()
         company_name = (
             body.get("companyName") or body.get("company_name") or ""
         ).strip()
@@ -330,7 +331,7 @@ class AuthController:
             raise ValidationError("password is required")
         if len(password) < 8:
             raise ValidationError("password must be at least 8 characters")
-        if not company_name:
+        if not invite_token and not company_name:
             raise ValidationError("companyName is required")
 
         preferred_slug = body.get("slug")
@@ -349,7 +350,59 @@ class AuthController:
                         "This username is already taken. Please choose another."
                     )
 
-                role = _ensure_platform_rbac(session)
+                _ensure_platform_rbac(session)
+
+                if invite_token:
+                    from utils.tenant_invites import (
+                        accept_invite_for_user,
+                        get_role_by_name,
+                        load_invite_by_raw_token,
+                    )
+
+                    invite = load_invite_by_raw_token(session, invite_token)
+                    tenant = session.get(Tenant, invite.tenant_id)
+                    if not tenant or not tenant.is_active:
+                        raise ValidationError("Invite tenant is not available")
+                    role = get_role_by_name(session, invite.role)
+                    user = User(
+                        username=username,
+                        email=email,
+                        password=bcrypt.hash(password),
+                        role_id=role.role_id,
+                        tenant_id=tenant.tenant_id,
+                    )
+                    session.add(user)
+                    session.flush()
+                    accept_invite_for_user(session, invite, user)
+                    session.commit()
+                    session.refresh(tenant)
+                    session.refresh(user)
+                    role, permission_codes = _user_permissions(session, user.role_id)
+                    modules = _modules_for_tenant(session, user.tenant_id)
+                    payload = _token_payload(user, role, permission_codes, modules)
+                    tokens = generate_tokens(payload)
+                    return create_success_response(
+                        {
+                            "success": True,
+                            "message": "Registered via invite",
+                            **tokens,
+                            "user": _auth_user_dict(
+                                user, role, permission_codes, modules
+                            ),
+                            "tenant": {
+                                "tenantId": tenant.tenant_id,
+                                "name": tenant.name,
+                                "slug": tenant.slug,
+                            },
+                            "inviteAccepted": True,
+                        }
+                    )
+
+                role = session.exec(
+                    select(Role).where(Role.role_name == "tenant_admin")
+                ).first()
+                if not role:
+                    role = _ensure_platform_rbac(session)
                 slug = _unique_tenant_slug(session, company_name, preferred_slug)
 
                 training = TenantTrainingSchema(

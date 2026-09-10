@@ -39,7 +39,13 @@ export const authApi = createApi({
     }),
     register: build.mutation<
       LoginResponse & { tenant?: { tenantId: number; name: string; slug?: string } },
-      { username: string; email: string; password: string; companyName: string }
+      {
+        username: string
+        email: string
+        password: string
+        companyName?: string
+        inviteToken?: string
+      }
     >({
       query: (body) => ({
         url: "/api/register",
@@ -49,6 +55,7 @@ export const authApi = createApi({
           email: body.email,
           password: body.password,
           companyName: body.companyName,
+          inviteToken: body.inviteToken,
         },
       }),
       transformResponse: (r: unknown) => unwrapData(r),

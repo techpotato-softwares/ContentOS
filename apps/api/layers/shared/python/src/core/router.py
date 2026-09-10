@@ -19,6 +19,8 @@ PUBLIC = {
     ("POST", "/api/auth/password-reset/request"),
     ("POST", "/api/auth/password-reset/confirm"),
     ("GET", "/api/social/linkedin/callback"),
+    ("GET", "/api/tenants/invites/preview"),
+    ("POST", "/api/tenants/invites/accept"),
 }
 
 class Router:
