@@ -38,6 +38,11 @@ class JwtConfig:
 
 
 @dataclass
+class StripeConfig:
+    secret_id: str
+
+
+@dataclass
 class EnvironmentConfig:
     environment: Environment
     stack_name: str
@@ -52,6 +57,7 @@ class EnvironmentConfig:
     features: FeatureFlags
     database: DatabaseConfig
     jwt: JwtConfig
+    stripe: StripeConfig
     custom_domain: str | None = None
     cloudfront_certificate_arn: str | None = None
 
@@ -105,6 +111,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             expires_in="15m",
             refresh_expires_in="1d",
         ),
+        stripe=StripeConfig(secret_id=f"/{APP}/dev/stripe"),
     ),
     "qa": EnvironmentConfig(
         environment="qa",
@@ -130,6 +137,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             expires_in="15m",
             refresh_expires_in="7d",
         ),
+        stripe=StripeConfig(secret_id=f"/{APP}/qa/stripe"),
     ),
     "prod": EnvironmentConfig(
         environment="prod",
@@ -154,6 +162,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             expires_in="2h",
             refresh_expires_in="30d",
         ),
+        stripe=StripeConfig(secret_id=f"/{APP}/prod/stripe"),
         custom_domain=os.environ.get("CUSTOM_DOMAIN") or None,
         cloudfront_certificate_arn=os.environ.get("CLOUDFRONT_CERTIFICATE_ARN")
         or None,

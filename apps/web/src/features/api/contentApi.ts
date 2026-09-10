@@ -233,12 +233,49 @@ export type AnalyticsInsights = {
 export const contentApi = createApi({
   reducerPath: "contentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights"],
+  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights", "Billing"],
   endpoints: (build) => ({
     getTheme: build.query<ThemePayload, void>({
       query: () => "/api/tenants/me/theme",
       transformResponse: (r: unknown) => unwrapData<ThemePayload>(r),
       providesTags: ["Theme"],
+    }),
+    getBillingSummary: build.query<
+      {
+        planTier: string
+        planLabel: string
+        monthlyUsd: number
+        aiBillingMode: string
+        byok: boolean
+        byokAllowed: boolean
+        billingStatus: string
+        hasStripeCustomer: boolean
+        hasSubscription: boolean
+        quota: { used: number; limit: number; month?: string | null }
+        plans: Array<{
+          id: string
+          label: string
+          monthlyUsd: number
+          quota: number
+          byokAllowed: boolean
+        }>
+      },
+      void
+    >({
+      query: () => "/api/billing/summary",
+      transformResponse: (r: unknown) => unwrapData(r),
+      providesTags: ["Billing"],
+    }),
+    createCheckoutSession: build.mutation<
+      { url: string; sessionId: string },
+      { planTier: string; successUrl?: string; cancelUrl?: string }
+    >({
+      query: (body) => ({ url: "/api/billing/checkout-session", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    createPortalSession: build.mutation<{ url: string }, void>({
+      query: () => ({ url: "/api/billing/portal-session", method: "POST", body: {} }),
+      transformResponse: (r: unknown) => unwrapData(r),
     }),
     listTenants: build.query<TenantRow[], void>({
       query: () => "/api/admin/tenants",
@@ -567,6 +604,9 @@ export const contentApi = createApi({
 
 export const {
   useGetThemeQuery,
+  useGetBillingSummaryQuery,
+  useCreateCheckoutSessionMutation,
+  useCreatePortalSessionMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
   useGetTrainingQuery,

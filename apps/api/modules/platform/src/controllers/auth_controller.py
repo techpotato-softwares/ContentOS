@@ -367,6 +367,11 @@ class AuthController:
                     training_json=training.model_dump_json(),
                     ui_mode="platform",
                     app_display_name=company_name,
+                    ai_billing_mode="platform",
+                    plan_tier="starter",
+                    ai_posts_quota_monthly=40,
+                    ai_posts_used_month=0,
+                    billing_status="none",
                 )
                 session.add(tenant)
                 session.flush()  # allocate tenant_id without committing

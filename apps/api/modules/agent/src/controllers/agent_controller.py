@@ -423,9 +423,19 @@ class AgentController:
         source_ref = (data.get("sourceRef") or "").strip() or None
         user_note = (data.get("userNote") or "").strip()  # e.g. "Repurpose PDF: file.pdf"
         with get_session() as session:
+            from utils.tenant_billing_schema import ensure_tenant_billing_columns
+            from utils.ai_billing import assert_platform_billing_ok, ensure_monthly_quota
+
+            ensure_tenant_billing_columns()
             tenant = session.get(Tenant, tid)
             if not tenant:
                 raise NotFoundError("Tenant not found")
+
+            # Soft-lock platform AI on past-due; BYOK remains available.
+            assert_platform_billing_ok(tenant)
+            # Reserve platform quota (1 batch). BYOK does not consume quota.
+            ensure_monthly_quota(tenant, units=1)
+            session.add(tenant)
 
             # Always attach to a chat session so history + variants reload together
             title_seed = user_note or source_ref or brief

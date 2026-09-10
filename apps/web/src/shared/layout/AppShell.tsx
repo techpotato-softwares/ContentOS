@@ -10,6 +10,7 @@ import {
   Share2,
   ClipboardCheck,
   Palette,
+  CreditCard,
   Lightbulb,
   BarChart3,
   MoreHorizontal,
@@ -38,6 +39,7 @@ const links: NavItem[] = [
   { to: "/review", label: "Review", icon: ClipboardCheck },
   { to: "/connections/linkedin", label: "LinkedIn", icon: Share2 },
   { to: "/settings/training", label: "Training", icon: Palette },
+  { to: "/settings/billing", label: "Billing", icon: CreditCard },
   { to: "/admin/tenants", label: "Tenants", icon: Building2, admin: true },
 ]
 

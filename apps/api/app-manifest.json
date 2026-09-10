@@ -32,7 +32,12 @@
         { "method": "POST", "path": "/api/admin/tenants/{tenantId}/brand/logo", "controller": "TenantsController", "action": "admin_upload_logo" },
         { "method": "GET", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "list_docs" },
         { "method": "POST", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "create_doc" },
-        { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" }
+        { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" },
+        { "method": "GET", "path": "/api/billing/plans", "controller": "BillingController", "action": "list_plans" },
+        { "method": "GET", "path": "/api/billing/summary", "controller": "BillingController", "action": "billing_summary" },
+        { "method": "POST", "path": "/api/billing/checkout-session", "controller": "BillingController", "action": "checkout_session" },
+        { "method": "POST", "path": "/api/billing/portal-session", "controller": "BillingController", "action": "portal_session" },
+        { "method": "POST", "path": "/api/billing/webhook", "controller": "BillingController", "action": "stripe_webhook" }
       ]
     },
     "agent": {

@@ -85,9 +85,9 @@ export default defineConfig({
           },
         ],
       },
-      // Dev SW can confuse installability testing; enable for local PWA checks.
+      // Dev SW often 404s until generated; enable only for local PWA checks.
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: "module",
         navigateFallback: "index.html",
       },

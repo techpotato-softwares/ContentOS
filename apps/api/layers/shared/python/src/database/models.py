@@ -24,6 +24,16 @@ class Tenant(SQLModel, table=True):
     primary_color: Optional[str] = None
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
+    # Hybrid AI billing (0009) + Stripe (0011)
+    ai_billing_mode: str = Field(default="platform")  # platform | byok
+    plan_tier: str = Field(default="starter")  # starter | growth | scale | agency
+    ai_secret_arn: Optional[str] = None
+    ai_posts_quota_monthly: int = Field(default=40)
+    ai_posts_used_month: int = Field(default=0)
+    ai_usage_month: Optional[str] = None  # YYYY-MM
+    stripe_customer_id: Optional[str] = Field(default=None, index=True)
+    stripe_subscription_id: Optional[str] = Field(default=None, index=True)
+    billing_status: str = Field(default="none")  # none|trialing|active|past_due|canceled|unpaid
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -184,6 +194,30 @@ class AuditLog(SQLModel, table=True):
     resource_id: Optional[str] = None
     detail: Optional[str] = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AiUsageEvent(SQLModel, table=True):
+    """Metered AI usage (platform quota vs BYOK analytics)."""
+
+    __tablename__ = "ai_usage_events"
+    event_id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(index=True)
+    user_id: Optional[int] = None
+    action: str = Field(default="generate")  # generate | chat | score | …
+    units: int = Field(default=1)
+    billing_mode: str = Field(default="platform")  # platform | byok
+    provider: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class StripeWebhookEvent(SQLModel, table=True):
+    """Idempotency ledger for Stripe webhook event ids."""
+
+    __tablename__ = "stripe_webhook_events"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    event_id: str = Field(unique=True, index=True)
+    event_type: str
+    processed_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # Keep demo table for kit compatibility (disabled in ContentOS modules by default)

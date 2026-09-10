@@ -15,6 +15,7 @@ PUBLIC = {
     ("POST", "/api/auth/refresh"),
     ("POST", "/api/register"),
     ("GET", "/api/social/linkedin/callback"),
+    ("POST", "/api/billing/webhook"),
 }
 
 class Router:
