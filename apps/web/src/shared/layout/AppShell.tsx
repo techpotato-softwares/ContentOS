@@ -13,6 +13,7 @@ import {
   Lightbulb,
   BarChart3,
   MoreHorizontal,
+  Users,
   type LucideIcon,
 } from "lucide-react"
 import { useAppDispatch, useAppSelector } from "@/app/hooks"
@@ -38,6 +39,7 @@ const links: NavItem[] = [
   { to: "/review", label: "Review", icon: ClipboardCheck },
   { to: "/connections/linkedin", label: "LinkedIn", icon: Share2 },
   { to: "/settings/training", label: "Training", icon: Palette },
+  { to: "/settings/team", label: "Team", icon: Users },
   { to: "/admin/tenants", label: "Tenants", icon: Building2, admin: true },
 ]
 
