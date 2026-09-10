@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 import secrets
+from datetime import datetime
+
 from passlib.hash import bcrypt
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +15,15 @@ from decorators.auth_decorators import ApiPublic, RequirePermission
 from database import get_session
 from database.models import User, Role, RolePermission, Permission, Tenant
 from utils.webtoken import generate_tokens
+from utils.auth_tokens import (
+    PURPOSE_EMAIL_VERIFY,
+    PURPOSE_PASSWORD_RESET,
+    consume_token,
+    ensure_auth_schema,
+    is_local,
+    issue_token,
+)
+from utils.auth_email import send_password_reset_email, send_verification_email
 from middleware.error_handler import (
     AppError,
     ValidationError,
@@ -28,6 +39,30 @@ _VERIFY_REQUEST_MSG = (
 _RESET_REQUEST_MSG = (
     "If an account exists for that email, we sent a password reset link."
 )
+
+# Platform RBAC catalog — ensured idempotently on register so production signup
+# does not depend on scripts/seed.py (seed is local/dev only).
+_PERMS = [
+    ("admin:tenants", "Manage all tenants"),
+    ("training:manage", "Edit training schema"),
+    ("tenant:admin", "Tenant administration"),
+    ("agent:chat", "Agent chat & generate"),
+    ("posts:review", "Review posts"),
+    ("posts:publish", "Publish to LinkedIn"),
+    ("admin", "Legacy admin"),
+]
+
+_ROLES = {
+    "super_admin": [p[0] for p in _PERMS],
+    "tenant_admin": [
+        "training:manage",
+        "tenant:admin",
+        "agent:chat",
+        "posts:review",
+        "posts:publish",
+    ],
+    "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
+}
 
 
 def _user_permissions(session, role_id: int | None) -> tuple[Role | None, list[str]]:
@@ -237,7 +272,14 @@ def _auth_user_dict(
         "tenantId": user.tenant_id,
         "permissions": permission_codes,
         "modulesEnabled": modules,
+        "emailVerified": _email_verified(user),
     }
+
+
+def _maybe_dev_link(mail_result: dict) -> dict:
+    if is_local() and mail_result.get("devLink"):
+        return {"devLink": mail_result["devLink"]}
+    return {}
 
 
 @Controller(path="/api", lambda_name="auth")
