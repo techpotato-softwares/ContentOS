@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { useAppDispatch, useAppSelector } from "@/app/hooks"
-import { setSession } from "@/features/auth/authSlice"
+import { setSession, type AuthUser } from "@/features/auth/authSlice"
 import { useLoginMutation } from "@/features/auth/authApi"
 import {
   useAcceptTenantInviteMutation,
@@ -50,26 +50,29 @@ export function AcceptInvitePage() {
     user: {
       userId: number
       username: string
-      email?: string
+      email?: string | null
       roleName?: string | null
       tenantId?: number | null
       permissions?: string[]
       modulesEnabled?: string[]
+      emailVerified?: boolean
     }
   }) => {
+    const user: AuthUser = {
+      userId: res.user.userId,
+      username: res.user.username,
+      email: res.user.email ?? "",
+      roleName: res.user.roleName ?? undefined,
+      tenantId: res.user.tenantId ?? undefined,
+      permissions: res.user.permissions,
+      modulesEnabled: res.user.modulesEnabled,
+      emailVerified: res.user.emailVerified,
+    }
     dispatch(
       setSession({
         accessToken: res.accessToken,
         refreshToken: res.refreshToken,
-        user: {
-          userId: res.user.userId,
-          username: res.user.username,
-          email: res.user.email,
-          roleName: res.user.roleName,
-          tenantId: res.user.tenantId,
-          permissions: res.user.permissions,
-          modulesEnabled: res.user.modulesEnabled,
-        },
+        user,
       }),
     )
     navigate("/agent")

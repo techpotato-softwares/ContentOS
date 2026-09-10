@@ -60,6 +60,50 @@ export const authApi = createApi({
       }),
       transformResponse: (r: unknown) => unwrapData(r),
     }),
+    requestEmailVerification: build.mutation<
+      { success?: boolean; message: string; link?: string },
+      { email: string }
+    >({
+      query: (body) => ({
+        url: "/api/auth/verify-email/request",
+        method: "POST",
+        body: { email: body.email },
+      }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ success?: boolean; message: string; link?: string }>(r),
+    }),
+    confirmEmailVerification: build.mutation<LoginResponse, { token: string }>({
+      query: (body) => ({
+        url: "/api/auth/verify-email/confirm",
+        method: "POST",
+        body: { token: body.token },
+      }),
+      transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
+    }),
+    requestPasswordReset: build.mutation<
+      { success?: boolean; message: string; link?: string },
+      { email: string }
+    >({
+      query: (body) => ({
+        url: "/api/auth/password-reset/request",
+        method: "POST",
+        body: { email: body.email },
+      }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ success?: boolean; message: string; link?: string }>(r),
+    }),
+    confirmPasswordReset: build.mutation<
+      { success?: boolean; message: string },
+      { token: string; password: string }
+    >({
+      query: (body) => ({
+        url: "/api/auth/password-reset/confirm",
+        method: "POST",
+        body: { token: body.token, password: body.password },
+      }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ success?: boolean; message: string }>(r),
+    }),
   }),
 })
 
@@ -67,4 +111,8 @@ export const {
   useLoginMutation,
   useRegisterMutation,
   useExchangeGoogleCodeMutation,
+  useRequestEmailVerificationMutation,
+  useConfirmEmailVerificationMutation,
+  useRequestPasswordResetMutation,
+  useConfirmPasswordResetMutation,
 } = authApi
