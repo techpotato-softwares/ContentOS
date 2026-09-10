@@ -233,7 +233,7 @@ export function AppShell() {
 
         <main
           className={cn(
-            "relative flex-1 p-3 min-w-0",
+            "relative flex-1 p-2.5 sm:p-3 min-w-0",
             "pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:pb-3",
             isWorkspace && "min-h-0 flex flex-col",
           )}
@@ -243,7 +243,7 @@ export function AppShell() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
             className={cn(
-              "glass-panel rounded-3xl p-4 md:p-6 shadow-elevated",
+              "glass-panel rounded-3xl p-3 sm:p-4 md:p-6 shadow-elevated",
               isWorkspace
                 ? "flex-1 min-h-0 overflow-hidden flex flex-col md:h-[calc(100dvh-1.5rem)]"
                 : "min-h-0 md:min-h-[calc(100dvh-1.5rem)] overflow-visible",
