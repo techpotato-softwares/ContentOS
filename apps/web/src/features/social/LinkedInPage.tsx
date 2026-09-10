@@ -49,11 +49,21 @@ export function LinkedInPage() {
       void loadOrgs()
         .unwrap()
         .then((res) => setOrgs(res.organizations || []))
-        .catch(() =>
-          setError(
-            "Could not list company pages. Ensure Community Management API scopes are approved.",
-          ),
-        )
+        .catch((e: unknown) => {
+          const data = e as { data?: { error?: { code?: string; message?: string } } }
+          const code = data?.data?.error?.code
+          if (code === "LINKEDIN_ORG_SCOPES_UNAVAILABLE" || code === "LINKEDIN_SCOPE_MISSING") {
+            setError(
+              "Could not list company pages — missing Community Management scopes. Reconnect company page OAuth after product approval.",
+            )
+          } else {
+            setError(
+              data?.data?.error?.message ||
+                "Could not list company pages. Ensure Community Management API scopes are approved.",
+            )
+          }
+        })
+
     } else if (flag === "error" && code === "LINKEDIN_ORG_SCOPES_UNAVAILABLE") {
       setError(
         "Company page OAuth failed — request Community Management API access on your LinkedIn app.",
@@ -161,7 +171,9 @@ export function LinkedInPage() {
         <div className="rounded-2xl border border-border p-4 sm:p-6 space-y-3 bg-background/40">
           <h2 className="font-display text-xl">Company page</h2>
           <p className="text-sm text-muted-foreground">
-            Tenant admin / super admin only. Requires LinkedIn Community Management API.
+            Tenant admin / super admin only. Requires LinkedIn Community Management API
+            (`w_organization_social`, `r_organization_admin`). Carousel posts need Documents API
+            product access (PDF upload).
           </p>
           <p className="text-sm">
             Status:{" "}

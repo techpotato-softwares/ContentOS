@@ -103,6 +103,11 @@ export type LinkedInStatus = {
   expiresAt?: string | null
   member: LinkedInAccountStatus
   organization: LinkedInAccountStatus
+  carousel?: {
+    enabled: boolean
+    mode: string
+    message: string
+  }
 }
 
 export type LinkedInOrganization = {
