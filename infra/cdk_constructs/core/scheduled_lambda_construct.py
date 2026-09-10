@@ -81,6 +81,7 @@ class ScheduledLambdaConstruct(Construct):
             "DB_SSL": str(config.database.ssl).lower(),
             "DB_SECRET_ID": config.db_secret_id,
             "JWT_SECRET_ID": config.jwt.secret_id,
+            "STRIPE_SECRET_ID": config.stripe.secret_id,
             "JWT_EXPIRES_IN": config.jwt.expires_in,
             "JWT_REFRESH_EXPIRES_IN": config.jwt.refresh_expires_in,
             "LOG_LEVEL": "INFO" if config.environment == "prod" else "DEBUG",
@@ -122,6 +123,7 @@ class ScheduledLambdaConstruct(Construct):
                 resources=[
                     f"arn:aws:secretsmanager:*:*:secret:{config.db_secret_id}*",
                     f"arn:aws:secretsmanager:*:*:secret:{config.jwt.secret_id}*",
+                    f"arn:aws:secretsmanager:*:*:secret:{config.stripe.secret_id}*",
                 ],
             )
         )

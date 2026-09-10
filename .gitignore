@@ -44,3 +44,5 @@ infra/.cdk.staging/
 # Next.js build artifacts
 **/.next/
 **/out/
+# Local BYOK AI secret stubs
+apps/api/.data/

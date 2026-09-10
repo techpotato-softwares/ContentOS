@@ -427,6 +427,15 @@ class AgentController:
             if not tenant:
                 raise NotFoundError("Tenant not found")
 
+            from utils.ai_billing import assert_platform_billing_ok, ensure_monthly_quota
+            from utils.tenant_billing_schema import ensure_tenant_billing_columns
+
+            ensure_tenant_billing_columns()
+            # Soft-lock past-due platform; consume 1 platform quota unit per generate batch
+            assert_platform_billing_ok(tenant)
+            ensure_monthly_quota(tenant, units=1)
+            session.add(tenant)
+
             # Always attach to a chat session so history + variants reload together
             title_seed = user_note or source_ref or brief
             cs = _ensure_chat_session(

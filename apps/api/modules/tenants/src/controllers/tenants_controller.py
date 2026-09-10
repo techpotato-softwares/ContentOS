@@ -6,8 +6,11 @@ from decorators import Controller, Get, Post, Put, Delete
 from decorators.auth_decorators import RequirePermission, RequireModule
 from database import get_session
 from database.models import Tenant, TrainingDocument
-from middleware.error_handler import NotFoundError, ValidationError, create_success_response
+from middleware.error_handler import AppError, NotFoundError, ValidationError, create_success_response
 from utils.tenant import resolve_tenant_id, is_super_admin, require_user, write_audit
+from utils.ai_billing import ai_settings_public, assert_byok_allowed
+from utils.ai_secrets import merge_tenant_ai_secrets, peek_tenant_ai_key_flags
+from utils.tenant_billing_schema import ensure_tenant_billing_columns
 from training.schema import (
     parse_training,
     render_context_pack,
@@ -208,6 +211,126 @@ class TenantsController:
             return create_success_response(
                 {"training": training.model_dump(), "contextPackVersion": t.context_pack_version, "packPreviewLen": len(pack)}
             )
+
+    @Get("/tenants/me/ai-settings")
+    @RequireModule("tenants")
+    @RequirePermission("training:manage", "tenant:admin", "admin:tenants")
+    def get_ai_settings(self, user=None):
+        """Hybrid AI billing settings for the caller's tenant only (no raw keys)."""
+        require_user(user)
+        ensure_tenant_billing_columns()
+        tid = resolve_tenant_id(user)
+        with get_session() as session:
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            return create_success_response(ai_settings_public(t))
+
+    @Put("/tenants/me/ai-settings")
+    @RequireModule("tenants")
+    @RequirePermission("training:manage", "admin:tenants")
+    def put_ai_settings(self, data: dict, user=None):
+        """Update billing mode and BYOK keys for the caller's tenant.
+
+        Plan tier is not editable here (Stripe/Razorpay checkout owns upgrades).
+        Super-admin cannot change another tenant's plan via this endpoint.
+        """
+        require_user(user)
+        ensure_tenant_billing_columns()
+        data = data or {}
+        # Reject cross-tenant / plan edits on this route
+        if data.get("tenantId") is not None or data.get("planTier") is not None or data.get("plan") is not None:
+            raise ValidationError(
+                "Plan changes are not allowed on AI settings. Use billing checkout to upgrade."
+            )
+
+        tid = resolve_tenant_id(user)
+        mode_raw = data.get("aiBillingMode")
+        openai_key = data.get("openaiApiKey")
+        gemini_key = data.get("geminiApiKey")
+        clear_openai = bool(data.get("clearOpenai"))
+        clear_gemini = bool(data.get("clearGemini"))
+
+        with get_session() as session:
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+
+            target_mode = (t.ai_billing_mode or "platform").strip().lower()
+            if mode_raw is not None:
+                target_mode = str(mode_raw).strip().lower()
+                if target_mode not in ("platform", "byok"):
+                    raise ValidationError("aiBillingMode must be 'platform' or 'byok'")
+
+            key_touch = (
+                clear_openai
+                or clear_gemini
+                or (isinstance(openai_key, str) and openai_key.strip())
+                or (isinstance(gemini_key, str) and gemini_key.strip())
+            )
+
+            if target_mode == "byok" or key_touch:
+                assert_byok_allowed(t)
+
+            # Preview resulting key flags before writing secrets
+            preview_flags = peek_tenant_ai_key_flags(tid, t.ai_secret_arn)
+            if clear_openai:
+                preview_flags["openaiConfigured"] = False
+            elif isinstance(openai_key, str) and openai_key.strip():
+                preview_flags["openaiConfigured"] = True
+            if clear_gemini:
+                preview_flags["geminiConfigured"] = False
+            elif isinstance(gemini_key, str) and gemini_key.strip():
+                preview_flags["geminiConfigured"] = True
+
+            if target_mode == "byok" and not (
+                preview_flags["openaiConfigured"] or preview_flags["geminiConfigured"]
+            ):
+                raise AppError(
+                    "BYOK mode requires at least one configured AI key.",
+                    400,
+                    "BYOK_KEYS_MISSING",
+                )
+
+            if key_touch:
+                # Empty strings are ignored (not clears); use clearOpenai/clearGemini flags
+                new_arn = merge_tenant_ai_secrets(
+                    tid,
+                    t.ai_secret_arn,
+                    openai_api_key=openai_key if isinstance(openai_key, str) and openai_key.strip() else None,
+                    gemini_api_key=gemini_key if isinstance(gemini_key, str) and gemini_key.strip() else None,
+                    clear_openai=clear_openai,
+                    clear_gemini=clear_gemini,
+                )
+                t.ai_secret_arn = new_arn
+
+            if mode_raw is not None:
+                t.ai_billing_mode = target_mode
+
+            t.updated_at = datetime.utcnow()
+            session.add(t)
+            flags_final = peek_tenant_ai_key_flags(tid, t.ai_secret_arn)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=(user or {}).get("userId"),
+                action="ai_settings.update",
+                resource_type="tenant",
+                resource_id=str(tid),
+                detail=json.dumps(
+                    {
+                        "aiBillingMode": t.ai_billing_mode,
+                        "openaiConfigured": flags_final["openaiConfigured"],
+                        "geminiConfigured": flags_final["geminiConfigured"],
+                        "clearedOpenai": clear_openai,
+                        "clearedGemini": clear_gemini,
+                        "keysUpdated": bool(key_touch),
+                    }
+                ),
+            )
+            session.commit()
+            session.refresh(t)
+            return create_success_response(ai_settings_public(t))
 
     # Admin path aliases
     @Get("/admin/tenants/{tenantId}/training")

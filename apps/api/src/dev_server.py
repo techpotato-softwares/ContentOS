@@ -56,6 +56,7 @@ ROUTE_MAP = [
     ("/api/me", "auth"),
     ("/api/admin/tenants", "tenants"),
     ("/api/tenants", "tenants"),
+    ("/api/billing", "tenants"),
     ("/api/agent", "agent"),
     ("/api/social", "publishing"),
     ("/api/posts", "publishing"),

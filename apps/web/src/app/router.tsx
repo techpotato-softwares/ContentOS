@@ -7,6 +7,8 @@ import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { AgentPage } from "@/features/agent/AgentPage"
 import { ReviewPage } from "@/features/posts/ReviewPage"
 import { TrainingPage } from "@/features/training/TrainingPage"
+import { BillingPage } from "@/features/billing/BillingPage"
+import { AiSettingsPage } from "@/features/settings/AiSettingsPage"
 import { AdminTenantsPage } from "@/features/tenants/AdminTenantsPage"
 import { LinkedInPage } from "@/features/social/LinkedInPage"
 import { InsightsPage } from "@/features/insights/InsightsPage"
@@ -39,6 +41,8 @@ export function AppRouter() {
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="review" element={<ReviewPage />} />
           <Route path="settings/training" element={<TrainingPage />} />
+          <Route path="settings/ai" element={<AiSettingsPage />} />
+          <Route path="settings/billing" element={<BillingPage />} />
           <Route path="connections/linkedin" element={<LinkedInPage />} />
           <Route path="admin/tenants" element={<AdminTenantsPage />} />
           <Route
