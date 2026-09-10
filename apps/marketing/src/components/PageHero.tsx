@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HeroAtmosphere } from "@/components/MarketingImage";
 
 type Cta = { href: string; label: string };
 
@@ -17,6 +18,7 @@ export function PageHero({
 }) {
   return (
     <section className="relative overflow-hidden border-b border-[var(--line)]">
+      <HeroAtmosphere opacity={0.3} />
       <div className="grid-overlay absolute inset-0" aria-hidden />
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_80%_at_0%_0%,rgba(62,233,201,0.2),transparent_55%),radial-gradient(ellipse_50%_60%_at_100%_20%,rgba(95,240,212,0.1),transparent_50%),radial-gradient(ellipse_40%_40%_at_80%_90%,rgba(212,180,131,0.06),transparent_50%)]"
@@ -55,7 +57,7 @@ export function PageHero({
           </span>
           <span className="trust-chip">
             <span className="trust-chip-dot" />
-            Demo in 20 min
+            Free to start
           </span>
         </div>
       </div>

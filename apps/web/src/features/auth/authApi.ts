@@ -6,17 +6,19 @@ type LoginResponse = {
   accessToken: string
   refreshToken: string
   user: AuthUser
-  emailVerificationRequired?: boolean
-  devLink?: string
+  message?: string
 }
 
-type MessageResponse = {
-  success?: boolean
-  message: string
-  devLink?: string
-  accessToken?: string
-  refreshToken?: string
-  user?: AuthUser
+/** Absolute API origin for full-page OAuth redirects (not relative SPA paths). */
+export function apiOrigin(): string {
+  const raw = (import.meta.env.VITE_API_URL as string | undefined) || ""
+  if (raw) return raw.replace(/\/$/, "")
+  // Dev: leave empty so browser hits Vite proxy (/api → :4001)
+  return ""
+}
+
+export function googleOAuthStartUrl(): string {
+  return `${apiOrigin()}/api/auth/google/start`
 }
 
 export const authApi = createApi({
@@ -25,6 +27,14 @@ export const authApi = createApi({
   endpoints: (build) => ({
     login: build.mutation<LoginResponse, { username: string; password: string }>({
       query: (body) => ({ url: "/api/login", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
+    }),
+    exchangeGoogleCode: build.mutation<LoginResponse, { code: string }>({
+      query: (body) => ({
+        url: "/api/auth/google/exchange",
+        method: "POST",
+        body: { code: body.code },
+      }),
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),
     register: build.mutation<
@@ -49,8 +59,5 @@ export const authApi = createApi({
 export const {
   useLoginMutation,
   useRegisterMutation,
-  useRequestEmailVerificationMutation,
-  useConfirmEmailVerificationMutation,
-  useRequestPasswordResetMutation,
-  useConfirmPasswordResetMutation,
+  useExchangeGoogleCodeMutation,
 } = authApi
