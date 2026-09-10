@@ -35,8 +35,8 @@ export function CountUp({
         visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
       }`}
     >
-      <p className="display text-2xl text-accent md:text-3xl">{value}</p>
-      <p className="mt-1 text-xs text-steel md:text-sm">{label}</p>
+      <p className="display text-2xl tracking-tight text-accent md:text-[1.85rem]">{value}</p>
+      <p className="mt-1.5 text-xs leading-snug text-steel md:text-sm">{label}</p>
     </div>
   );
 }

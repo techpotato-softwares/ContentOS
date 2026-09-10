@@ -101,9 +101,7 @@ export function usePwaInstall(): PwaInstallState {
     let cancelled = false
     void (async () => {
       try {
-        const hasManifest = Boolean(
-          document.querySelector('link[rel="manifest"]'),
-        )
+        const hasManifest = Boolean(document.querySelector('link[rel="manifest"]'))
         let swOk = false
         if ("serviceWorker" in navigator) {
           const reg = await navigator.serviceWorker.ready

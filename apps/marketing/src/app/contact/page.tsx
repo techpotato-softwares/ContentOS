@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { PageHero } from "@/components/PageHero";
+import { appLoginUrl } from "@/lib/appUrl";
 import { ContactForm } from "@/components/ContactForm";
 import { Reveal } from "@/components/Reveal";
 
 export const metadata: Metadata = {
-  title: "Request a demo",
-  description: "Request a ContentOS demo for your marketing team, agency, or personal brand.",
+  title: "Contact",
+  description: "Contact ContentOS for your marketing team, agency, or personal brand.",
 };
 
 export default function ContactPage() {
@@ -13,14 +14,18 @@ export default function ContactPage() {
     <>
       <PageHero
         eyebrow="Contact"
-        title="Book a demo — see ContentOS with your brand in mind."
-        description="Tell us about your team and LinkedIn goals. We'll walk train → generate → review → publish in one focused session."
+        title="Get in touch — see ContentOS with your brand in mind."
+        description="Tell us about your team and LinkedIn goals. Or start free and explore the product yourself."
+        primaryCta={{ href: appLoginUrl(), label: "Start Free" }}
+        secondaryCta={{ href: "#contact-form", label: "Send a message" }}
       />
 
       <section className="section">
         <div className="section-inner grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14">
           <Reveal>
-            <ContactForm />
+            <div id="contact-form">
+              <ContactForm />
+            </div>
           </Reveal>
 
           <Reveal delay={100}>

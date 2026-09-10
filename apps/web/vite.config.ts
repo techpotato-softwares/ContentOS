@@ -31,6 +31,7 @@ export default defineConfig({
         "pwa-512-maskable.png",
       ],
       manifest: {
+        id: "./",
         name: "ContentOS",
         short_name: "ContentOS",
         description: "B2B LinkedIn image content operating system",
@@ -38,7 +39,6 @@ export default defineConfig({
         dir: "ltr",
         start_url: "./",
         scope: "./",
-        id: "./",
         display: "standalone",
         // Installed icon → app window; same URL in Chrome tab → normal website
         display_override: ["standalone", "minimal-ui", "browser"],
@@ -92,9 +92,10 @@ export default defineConfig({
           },
         ],
       },
-      // Localhost PWA install testing (Chrome treats localhost as secure)
+      // Dev SW often 500s if sw.js isn't generated yet and blocks the UI with Vite overlay.
+      // Enable only when intentionally testing installability locally.
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: "module",
         navigateFallback: "index.html",
       },

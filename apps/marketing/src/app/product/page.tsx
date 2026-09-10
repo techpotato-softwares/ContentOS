@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { appLoginUrl } from "@/lib/appUrl";
 import { PageHero } from "@/components/PageHero";
 import { DraftStudio } from "@/components/DraftStudio";
 import { MarketingCTA } from "@/components/MarketingCTA";
+import { MarketingImage } from "@/components/MarketingImage";
 import { PipelineVisual } from "@/components/PipelineVisual";
 import { Reveal } from "@/components/Reveal";
 
@@ -42,7 +44,7 @@ export default function ProductPage() {
         eyebrow="Product"
         title="From brand training to LinkedIn publish — one operating system."
         description="ContentOS turns LinkedIn from a weekly scramble into a repeatable loop: train once, generate on-brand drafts, approve with your team, then ship."
-        primaryCta={{ href: "/contact", label: "Request a demo" }}
+        primaryCta={{ href: appLoginUrl(), label: "Start Free" }}
         secondaryCta={{ href: "/features", label: "Browse features" }}
       />
 
@@ -71,7 +73,20 @@ export default function ProductPage() {
             </div>
           </Reveal>
           <Reveal delay={100}>
-            <DraftStudio />
+            <div className="space-y-6">
+              <MarketingImage
+                src="/images/product-review.webp"
+                alt="ContentOS review queue and LinkedIn draft workspace"
+                variant="panel"
+                badge="Live"
+                eyebrow="Review queue"
+                caption="Approve every draft before it goes live."
+                className="aspect-[4/3] w-full"
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                priority
+              />
+              <DraftStudio />
+            </div>
           </Reveal>
         </div>
       </section>
@@ -103,8 +118,8 @@ export default function ProductPage() {
             ))}
           </ol>
           <div className="mt-12">
-            <Link href="/contact" className="btn-primary btn-demo">
-              Book a walkthrough
+            <Link href={appLoginUrl()} className="btn-primary btn-demo">
+              Start Free
             </Link>
           </div>
         </div>

@@ -68,11 +68,12 @@ const agentScript = [
 type Status = "generating" | "review" | "ready";
 
 export function ProductMockup({ className = "" }: { className?: string }) {
+  const [active, setActive] = useState(false);
   const [draftIndex, setDraftIndex] = useState(0);
-  const [typed, setTyped] = useState("");
-  const [status, setStatus] = useState<Status>("generating");
+  const [typed, setTyped] = useState(drafts[0].caption);
+  const [status, setStatus] = useState<Status>("ready");
   const [slide, setSlide] = useState(0);
-  const [visibleMsgs, setVisibleMsgs] = useState(1);
+  const [visibleMsgs, setVisibleMsgs] = useState(agentScript.length);
   const [likes, setLikes] = useState(128);
   const [fade, setFade] = useState(true);
   const [clock, setClock] = useState("--:--");
@@ -80,6 +81,15 @@ export function ProductMockup({ className = "" }: { className?: string }) {
   const draft = drafts[draftIndex];
   const progress = status === "generating" ? 42 : status === "review" ? 76 : 100;
   const activeNav = status === "generating" ? "chat" : "review";
+
+  useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
+
+    const start = () => setActive(true);
+    const t = window.setTimeout(start, 1200);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const tick = () =>
@@ -95,6 +105,8 @@ export function ProductMockup({ className = "" }: { className?: string }) {
   }, []);
 
   useEffect(() => {
+    if (!active) return;
+
     setFade(false);
     const t = window.setTimeout(() => setFade(true), 40);
     setTyped("");
@@ -114,43 +126,46 @@ export function ProductMockup({ className = "" }: { className?: string }) {
         setStatus("review");
         readyTimer = window.setTimeout(() => setStatus("ready"), 1100);
       }
-    }, 16);
+    }, 28);
 
     return () => {
       window.clearTimeout(t);
       window.clearInterval(typeTimer);
       if (readyTimer) window.clearTimeout(readyTimer);
     };
-  }, [draftIndex]);
+  }, [active, draftIndex]);
 
   useEffect(() => {
+    if (!active) return;
     const msgTimer = window.setInterval(() => {
       setVisibleMsgs((n) => (n >= agentScript.length ? n : n + 1));
     }, 1400);
     return () => window.clearInterval(msgTimer);
-  }, [draftIndex]);
+  }, [active, draftIndex]);
 
   useEffect(() => {
+    if (!active) return;
     const slideTimer = window.setInterval(() => {
       setSlide((s) => (s + 1) % draft.slides.length);
     }, 2200);
     return () => window.clearInterval(slideTimer);
-  }, [draft.slides.length, draftIndex]);
+  }, [active, draft.slides.length, draftIndex]);
 
   useEffect(() => {
+    if (!active) return;
     const draftTimer = window.setInterval(() => {
       setDraftIndex((i) => (i + 1) % drafts.length);
     }, 14000);
     return () => window.clearInterval(draftTimer);
-  }, []);
+  }, [active]);
 
   useEffect(() => {
-    if (status !== "ready") return;
+    if (!active || status !== "ready") return;
     const likeTimer = window.setInterval(() => {
       setLikes((n) => n + (Math.random() > 0.5 ? 1 : 0));
     }, 1800);
     return () => window.clearInterval(likeTimer);
-  }, [status]);
+  }, [active, status]);
 
   return (
     <div className={`relative mx-auto w-full max-w-[480px] md:max-w-[520px] ${className}`}>
@@ -163,7 +178,7 @@ export function ProductMockup({ className = "" }: { className?: string }) {
 
       <div className="studio-shell relative z-[1] overflow-hidden rounded-xl border border-[var(--line)] bg-[#121c19]/95 shadow-[0_20px_50px_rgba(0,0,0,0.45)]">
         {/* Title bar */}
-        <div className="flex items-center justify-between gap-2 border-b border-[var(--line)] bg-[#0d1513]/90] px-3 py-2 backdrop-blur">
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--line)] bg-[#0d1513] px-3 py-2">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-[#ff5f57]" />
             <span className="h-2 w-2 rounded-full bg-[#febc2e]" />
