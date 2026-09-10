@@ -22,6 +22,29 @@ export type TenantRow = {
   accentColor?: string
 }
 
+export type AiSettingsPayload = {
+  aiBillingMode: "platform" | "byok" | string
+  planTier: string
+  byokAllowed: boolean
+  quota: {
+    monthlyLimit: number
+    usedThisMonth: number
+    month: string
+    remaining: number
+  }
+  keys: {
+    openaiConfigured: boolean
+    geminiConfigured: boolean
+  }
+  plans: Array<{
+    id: string
+    label: string
+    monthlyUsd: number
+    quota: number
+    byokAllowed: boolean
+  }>
+}
+
 export type ContentPost = {
   postId: number
   batchId?: number
@@ -233,12 +256,68 @@ export type AnalyticsInsights = {
 export const contentApi = createApi({
   reducerPath: "contentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights"],
+  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights", "Billing", "AiSettings"],
   endpoints: (build) => ({
     getTheme: build.query<ThemePayload, void>({
       query: () => "/api/tenants/me/theme",
       transformResponse: (r: unknown) => unwrapData<ThemePayload>(r),
       providesTags: ["Theme"],
+    }),
+    getBillingSummary: build.query<
+      {
+        planTier: string
+        planLabel: string
+        monthlyUsd: number
+        aiBillingMode: string
+        byok: boolean
+        byokAllowed: boolean
+        billingStatus: string
+        hasStripeCustomer: boolean
+        hasSubscription: boolean
+        quota: { used: number; limit: number; month?: string | null }
+        plans: Array<{
+          id: string
+          label: string
+          monthlyUsd: number
+          quota: number
+          byokAllowed: boolean
+        }>
+      },
+      void
+    >({
+      query: () => "/api/billing/summary",
+      transformResponse: (r: unknown) => unwrapData(r),
+      providesTags: ["Billing"],
+    }),
+    createCheckoutSession: build.mutation<
+      { url: string; sessionId: string },
+      { planTier: string; successUrl?: string; cancelUrl?: string }
+    >({
+      query: (body) => ({ url: "/api/billing/checkout-session", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    createPortalSession: build.mutation<{ url: string }, void>({
+      query: () => ({ url: "/api/billing/portal-session", method: "POST", body: {} }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    getAiSettings: build.query<AiSettingsPayload, void>({
+      query: () => "/api/tenants/me/ai-settings",
+      transformResponse: (r: unknown) => unwrapData<AiSettingsPayload>(r),
+      providesTags: ["AiSettings"],
+    }),
+    putAiSettings: build.mutation<
+      AiSettingsPayload,
+      {
+        aiBillingMode?: "platform" | "byok"
+        openaiApiKey?: string
+        geminiApiKey?: string
+        clearOpenai?: boolean
+        clearGemini?: boolean
+      }
+    >({
+      query: (body) => ({ url: "/api/tenants/me/ai-settings", method: "PUT", body }),
+      transformResponse: (r: unknown) => unwrapData<AiSettingsPayload>(r),
+      invalidatesTags: ["AiSettings", "Billing"],
     }),
     listTenants: build.query<TenantRow[], void>({
       query: () => "/api/admin/tenants",
@@ -567,6 +646,11 @@ export const contentApi = createApi({
 
 export const {
   useGetThemeQuery,
+  useGetBillingSummaryQuery,
+  useCreateCheckoutSessionMutation,
+  useCreatePortalSessionMutation,
+  useGetAiSettingsQuery,
+  usePutAiSettingsMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
   useGetTrainingQuery,

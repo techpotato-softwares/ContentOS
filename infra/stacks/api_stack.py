@@ -24,6 +24,7 @@ from cdk_constructs.permissions.lambda_permissions import (
 )
 from cdk_constructs.security.db_secrets_construct import DbSecretsConstruct
 from cdk_constructs.security.jwt_secrets_construct import JwtSecretsConstruct
+from cdk_constructs.security.stripe_secrets_construct import StripeSecretsConstruct
 from cdk_constructs.storage.s3_construct import S3Construct
 from paths import LAYER_BUNDLED, MARKETING_PATH, UI_BUILD_PATH
 from utils.manifest_reader import read_manifest
@@ -201,6 +202,12 @@ class ApiStack(Stack):
             self, "JwtSecretsConstruct", config=config
         )
         permission_providers.append(jwt_secrets)
+
+        print("\n🔐 Creating Stripe secrets...")
+        stripe_secrets = StripeSecretsConstruct(
+            self, "StripeSecretsConstruct", config=config
+        )
+        permission_providers.append(stripe_secrets)
 
         if permission_providers:
             print("\n🔐 Applying permissions to Lambda functions...")
