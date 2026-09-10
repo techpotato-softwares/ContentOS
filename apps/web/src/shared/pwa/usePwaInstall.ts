@@ -43,32 +43,40 @@ function isDismissed(): boolean {
 function isIosSafari(): boolean {
   if (typeof navigator === "undefined") return false
   const ua = navigator.userAgent
-  const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  const iOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
   const webkit = /WebKit/.test(ua)
   const chromeIos = /CriOS|FxiOS|EdgiOS/.test(ua)
   return iOS && webkit && !chromeIos
 }
 
 export type PwaInstallState = {
-  /** Banner should be visible */
   visible: boolean
-  /** Native install is available via beforeinstallprompt */
+  /** Chrome/Edge fired beforeinstallprompt — Install opens native dialog */
   canInstall: boolean
-  /** Show iOS Add-to-Home-Screen hint */
+  browserHint: boolean
   iosHint: boolean
   installing: boolean
   install: () => Promise<void>
   dismiss: () => void
 }
 
+/**
+ * Drives install UI. Native Android Chrome ⋮ → Install app appears when the site
+ * is installable (manifest + SW + HTTPS); that menu is controlled by Chrome.
+ * Our banner Install button calls event.prompt() for the same system dialog.
+ */
 export function usePwaInstall(): PwaInstallState {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(() => isStandaloneDisplay())
   const [dismissed, setDismissed] = useState(() => isDismissed())
   const [installing, setInstalling] = useState(false)
+  const [pwaReady, setPwaReady] = useState(false)
 
   useEffect(() => {
     const onBip = (e: BeforeInstallPromptEvent) => {
+      // Capture so we can open the same native Install dialog as Chrome ⋮ menu
       e.preventDefault()
       setDeferred(e)
     }
@@ -90,7 +98,23 @@ export function usePwaInstall(): PwaInstallState {
     window.addEventListener("appinstalled", onInstalled)
     mq.addEventListener?.("change", onDisplayChange)
 
+    let cancelled = false
+    void (async () => {
+      try {
+        const hasManifest = Boolean(document.querySelector('link[rel="manifest"]'))
+        let swOk = false
+        if ("serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.ready
+          swOk = Boolean(reg.active)
+        }
+        if (!cancelled) setPwaReady(hasManifest && swOk)
+      } catch {
+        if (!cancelled) setPwaReady(false)
+      }
+    })()
+
     return () => {
+      cancelled = true
       window.removeEventListener("beforeinstallprompt", onBip)
       window.removeEventListener("appinstalled", onInstalled)
       mq.removeEventListener?.("change", onDisplayChange)
@@ -110,6 +134,7 @@ export function usePwaInstall(): PwaInstallState {
     if (!deferred) return
     setInstalling(true)
     try {
+      // Opens Chrome's native "Install app" dialog (same as ⋮ → Install app)
       await deferred.prompt()
       const choice = await deferred.userChoice
       if (choice.outcome === "accepted") {
@@ -123,11 +148,14 @@ export function usePwaInstall(): PwaInstallState {
 
   const iosHint = !installed && !dismissed && !deferred && isIosSafari()
   const canInstall = Boolean(deferred) && !installed && !dismissed
-  const visible = !installed && !dismissed && (canInstall || iosHint)
+  const browserHint =
+    !installed && !dismissed && !canInstall && !iosHint && pwaReady
+  const visible = !installed && !dismissed && (canInstall || iosHint || browserHint)
 
   return {
     visible,
     canInstall,
+    browserHint,
     iosHint,
     installing,
     install,

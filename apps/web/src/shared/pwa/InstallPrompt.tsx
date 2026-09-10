@@ -5,11 +5,18 @@ import { cn } from "@/shared/lib/utils"
 import { usePwaInstall } from "@/shared/pwa/usePwaInstall"
 
 /**
- * Top-of-page install banner. Does not block content (in-flow, not overlay).
- * Uses beforeinstallprompt when available; iOS gets Add-to-Home-Screen guidance.
+ * In-flow top banner. Install App triggers Chrome's native install dialog
+ * (same UI as Android Chrome ⋮ → Install app).
  */
 export function InstallPrompt({ className }: { className?: string }) {
-  const { visible, canInstall, iosHint, installing, install, dismiss } = usePwaInstall()
+  const { visible, canInstall, browserHint, iosHint, installing, install, dismiss } =
+    usePwaInstall()
+
+  const subtitle = iosHint
+    ? "Tap Share, then “Add to Home Screen”. Website still opens in Safari anytime."
+    : canInstall
+      ? "Creates a home-screen app. Your site keeps working normally in Chrome too."
+      : "Use ⋮ → Install and create shortcut. Browser tab will keep working as usual."
 
   return (
     <AnimatePresence>
@@ -31,15 +38,15 @@ export function InstallPrompt({ className }: { className?: string }) {
             )}
           >
             <div className="mx-auto flex max-w-5xl items-center gap-3">
-              <div className="hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-primary to-secondary font-display text-sm font-semibold text-primary-foreground shadow-glow">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-primary to-secondary font-display text-sm font-semibold text-primary-foreground shadow-glow">
                 C
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium leading-tight truncate">Install ContentOS</p>
+                <p className="text-sm font-medium leading-tight truncate">
+                  Install & create shortcut
+                </p>
                 <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug mt-0.5">
-                  {iosHint
-                    ? "Tap Share, then “Add to Home Screen” for the app experience."
-                    : "Add to your device for faster access and a full-screen app."}
+                  {subtitle}
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -51,13 +58,19 @@ export function InstallPrompt({ className }: { className?: string }) {
                     onClick={() => void install()}
                   >
                     <Download className="h-3.5 w-3.5" />
-                    <span>{installing ? "Installing…" : "Install App"}</span>
+                    <span>{installing ? "Installing…" : "Install"}</span>
                   </Button>
                 )}
                 {iosHint && (
                   <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-muted/50 px-2.5 py-2 text-[11px] text-muted-foreground min-h-10">
                     <Share className="h-3.5 w-3.5 text-primary" />
                     Share
+                  </span>
+                )}
+                {browserHint && (
+                  <span className="hidden sm:inline-flex items-center gap-1 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-2 text-[11px] text-primary min-h-10">
+                    <Download className="h-3.5 w-3.5" />
+                    Chrome ⋮
                   </span>
                 )}
                 <Button

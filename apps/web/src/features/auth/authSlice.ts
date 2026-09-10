@@ -8,6 +8,7 @@ export type AuthUser = {
   tenantId?: number
   permissions?: string[]
   modulesEnabled?: string[]
+  emailVerified?: boolean
 }
 
 type AuthState = {
@@ -57,6 +58,10 @@ const authSlice = createSlice({
       state.refreshToken = action.payload.refreshToken
       persist(state)
     },
+    setUser(state, action: PayloadAction<AuthUser>) {
+      state.user = action.payload
+      persist(state)
+    },
     logout(state) {
       state.accessToken = null
       state.refreshToken = null
@@ -66,5 +71,5 @@ const authSlice = createSlice({
   },
 })
 
-export const { setSession, setCredentials, logout } = authSlice.actions
+export const { setSession, setCredentials, setUser, logout } = authSlice.actions
 export default authSlice.reducer

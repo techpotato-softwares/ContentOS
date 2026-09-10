@@ -283,10 +283,11 @@ export function ReviewPage() {
                           ).unwrap()
                           void refetch()
                         } catch (e: unknown) {
+                          const d = (e as { data?: { message?: string; error?: { message?: string } | string } })
+                            ?.data
                           const msg =
-                            (e as { data?: { message?: string; error?: string } })?.data
-                              ?.message ||
-                            (e as { data?: { error?: string } })?.data?.error ||
+                            (typeof d?.error === "object" ? d.error?.message : d?.error) ||
+                            d?.message ||
                             "Post to LinkedIn failed"
                           setPublishError(String(msg))
                         }
@@ -310,10 +311,11 @@ export function ReviewPage() {
                           ).unwrap()
                           void refetch()
                         } catch (e: unknown) {
+                          const d = (e as { data?: { message?: string; error?: { message?: string } | string } })
+                            ?.data
                           const msg =
-                            (e as { data?: { message?: string; error?: string } })?.data
-                              ?.message ||
-                            (e as { data?: { error?: string } })?.data?.error ||
+                            (typeof d?.error === "object" ? d.error?.message : d?.error) ||
+                            d?.message ||
                             "Publish failed"
                           setPublishError(String(msg))
                         }

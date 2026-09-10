@@ -63,7 +63,7 @@ export function AiSettingsPage() {
 
   const planLabel = useMemo(() => {
     const match = data?.plans.find((p) => p.id === data.planTier)
-    return match?.label || data?.planTier || "—"
+    return match?.label || data?.planTier || "ΓÇö"
   }, [data])
 
   const usagePct = useMemo(() => {
@@ -132,7 +132,7 @@ export function AiSettingsPage() {
         </p>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading AI settings…</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading AI settingsΓÇª</p>}
       {error && (
         <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           Could not load AI settings.
@@ -161,7 +161,7 @@ export function AiSettingsPage() {
                 <h2 className="font-display mt-1 text-xl">{planLabel}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Mode: {data.aiBillingMode}
-                  {data.byokAllowed ? " · BYOK available" : " · BYOK locked on Starter"}
+                  {data.byokAllowed ? " ┬╖ BYOK available" : " ┬╖ BYOK locked on Starter"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -171,7 +171,7 @@ export function AiSettingsPage() {
                   onClick={() => void upgrade("growth")}
                 >
                   <Sparkles className="h-4 w-4" />
-                  {checkoutState.isLoading ? "Starting…" : "Upgrade"}
+                  {checkoutState.isLoading ? "StartingΓÇª" : "Upgrade"}
                 </Button>
                 <Button
                   variant="secondary"
@@ -180,7 +180,7 @@ export function AiSettingsPage() {
                   onClick={() => void openPortal()}
                 >
                   <ExternalLink className="h-4 w-4" />
-                  {portalState.isLoading ? "Opening…" : "Billing portal"}
+                  {portalState.isLoading ? "OpeningΓÇª" : "Billing portal"}
                 </Button>
                 <Button asChild variant="ghost" className="rounded-xl">
                   <Link to="/settings/billing">Full billing</Link>
@@ -194,7 +194,7 @@ export function AiSettingsPage() {
                 <p className="text-xs text-muted-foreground">{data.quota.month}</p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                {data.quota.usedThisMonth} used · {data.quota.remaining} remaining ·{" "}
+                {data.quota.usedThisMonth} used ┬╖ {data.quota.remaining} remaining ┬╖{" "}
                 {data.quota.monthlyLimit} limit
               </p>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
@@ -241,7 +241,7 @@ export function AiSettingsPage() {
                 <p className="text-sm font-semibold">Bring your own keys</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {byokAllowed
-                    ? "Your OpenAI/Gemini keys — no platform AI COGS."
+                    ? "Your OpenAI/Gemini keys ΓÇö no platform AI COGS."
                     : "Upgrade to Growth+ to unlock BYOK."}
                 </p>
               </button>
@@ -266,7 +266,7 @@ export function AiSettingsPage() {
                     id="openai-key"
                     type="password"
                     autoComplete="off"
-                    placeholder={data.keys.openaiConfigured ? "•••••••• (leave blank to keep)" : "sk-…"}
+                    placeholder={data.keys.openaiConfigured ? "ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó (leave blank to keep)" : "sk-ΓÇª"}
                     value={openaiKey}
                     disabled={!byokAllowed}
                     onChange={(e) => setOpenaiKey(e.target.value)}
@@ -296,7 +296,7 @@ export function AiSettingsPage() {
                     type="password"
                     autoComplete="off"
                     placeholder={
-                      data.keys.geminiConfigured ? "•••••••• (leave blank to keep)" : "AIza…"
+                      data.keys.geminiConfigured ? "ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó (leave blank to keep)" : "AIzaΓÇª"
                     }
                     value={geminiKey}
                     disabled={!byokAllowed}
@@ -322,7 +322,7 @@ export function AiSettingsPage() {
                 disabled={putState.isLoading}
                 onClick={() => void save()}
               >
-                {putState.isLoading ? "Saving…" : "Save settings"}
+                {putState.isLoading ? "SavingΓÇª" : "Save settings"}
               </Button>
               <button
                 type="button"
@@ -351,7 +351,7 @@ export function AiSettingsPage() {
                       <p className="text-sm font-semibold">${plan.monthlyUsd}/mo</p>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {plan.quota} AI posts/mo · BYOK{" "}
+                      {plan.quota} AI posts/mo ┬╖ BYOK{" "}
                       {plan.byokAllowed ? "allowed" : "not included"}
                     </p>
                     <Button

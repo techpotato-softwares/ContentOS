@@ -10,14 +10,18 @@ const apiProxy = {
   "/media": "http://localhost:4001",
 }
 
+/**
+ * Chrome/Edge Android show ⋮ → “Install app” only when installability criteria pass:
+ * HTTPS (or localhost), valid manifest, SW with fetch handler, 192+512 PNG icons.
+ */
 export default defineConfig({
-  // Deployed: VITE_BASE=/app/  |  Local default: /
   base: process.env.VITE_BASE || "/",
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      injectRegister: null, // we register explicitly in main.tsx
       includeAssets: [
         "favicon.svg",
         "icons.svg",
@@ -27,18 +31,21 @@ export default defineConfig({
         "pwa-512-maskable.png",
       ],
       manifest: {
-        id: "/",
+        id: "./",
         name: "ContentOS",
         short_name: "ContentOS",
         description: "B2B LinkedIn image content operating system",
-        theme_color: "#0d9488",
-        background_color: "#f4f7f6",
-        display: "standalone",
-        display_override: ["standalone", "browser"],
-        orientation: "any",
+        lang: "en",
+        dir: "ltr",
         start_url: "./",
         scope: "./",
-        lang: "en",
+        display: "standalone",
+        // Installed icon → app window; same URL in Chrome tab → normal website
+        display_override: ["standalone", "minimal-ui", "browser"],
+        orientation: "any",
+        theme_color: "#0d9488",
+        background_color: "#f4f7f6",
+        prefer_related_applications: false,
         categories: ["business", "productivity"],
         icons: [
           {
@@ -85,9 +92,10 @@ export default defineConfig({
           },
         ],
       },
-      // Dev SW can confuse installability testing; enable for local PWA checks.
+      // Dev SW often 500s if sw.js isn't generated yet and blocks the UI with Vite overlay.
+      // Enable only when intentionally testing installability locally.
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: "module",
         navigateFallback: "index.html",
       },
