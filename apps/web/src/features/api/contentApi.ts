@@ -22,6 +22,46 @@ export type TenantRow = {
   accentColor?: string
 }
 
+export type TenantInviteRow = {
+  inviteId: number
+  email: string
+  role: string
+  status: string
+  expiresAt?: string | null
+  invitedBy?: number | null
+  tenantId?: number
+  tenantName?: string | null
+  createdAt?: string | null
+  acceptedAt?: string | null
+}
+
+export type TenantInvitePreview = {
+  email: string
+  role: string
+  expiresAt?: string | null
+  tenantName?: string | null
+  status: string
+}
+
+export type TenantInviteAcceptResult = {
+  accepted: boolean
+  registered?: boolean
+  tenantId?: number
+  role?: string
+  accessToken: string
+  refreshToken: string
+  user: {
+    userId: number
+    username: string
+    email?: string | null
+    roleName?: string | null
+    tenantId?: number | null
+    permissions?: string[]
+    modulesEnabled?: string[]
+    emailVerified?: boolean
+  }
+}
+
 export type AiSettingsPayload = {
   aiBillingMode: "platform" | "byok" | string
   planTier: string
@@ -256,7 +296,19 @@ export type AnalyticsInsights = {
 export const contentApi = createApi({
   reducerPath: "contentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights", "Billing", "AiSettings"],
+  tagTypes: [
+    "Theme",
+    "Training",
+    "Tenants",
+    "TenantInvites",
+    "Posts",
+    "LinkedIn",
+    "Batch",
+    "Sessions",
+    "Insights",
+    "Billing",
+    "AiSettings",
+  ],
   endpoints: (build) => ({
     getTheme: build.query<ThemePayload, void>({
       query: () => "/api/tenants/me/theme",
@@ -302,6 +354,44 @@ export const contentApi = createApi({
       query: (body) => ({ url: "/api/admin/tenants", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData<TenantRow>(r),
       invalidatesTags: ["Tenants"],
+    }),
+    listTenantInvites: build.query<{ invites: TenantInviteRow[] }, void>({
+      query: () => "/api/tenants/invites",
+      transformResponse: (r: unknown) => unwrapData<{ invites: TenantInviteRow[] }>(r),
+      providesTags: ["TenantInvites"],
+    }),
+    createTenantInvite: build.mutation<
+      { invite: TenantInviteRow; emailSent: boolean; emailReason?: string },
+      { email: string; role?: "tenant_member" | "tenant_admin" }
+    >({
+      query: (body) => ({ url: "/api/tenants/invites", method: "POST", body }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ invite: TenantInviteRow; emailSent: boolean; emailReason?: string }>(r),
+      invalidatesTags: ["TenantInvites"],
+    }),
+    revokeTenantInvite: build.mutation<
+      { invite: TenantInviteRow; revoked: boolean },
+      number
+    >({
+      query: (inviteId) => ({
+        url: `/api/tenants/invites/${inviteId}`,
+        method: "DELETE",
+      }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ invite: TenantInviteRow; revoked: boolean }>(r),
+      invalidatesTags: ["TenantInvites"],
+    }),
+    previewTenantInvite: build.query<TenantInvitePreview, string>({
+      query: (token) => `/api/tenants/invites/preview?token=${encodeURIComponent(token)}`,
+      transformResponse: (r: unknown) => unwrapData<TenantInvitePreview>(r),
+    }),
+    acceptTenantInvite: build.mutation<
+      TenantInviteAcceptResult,
+      { token: string; username?: string; email?: string; password?: string }
+    >({
+      query: (body) => ({ url: "/api/tenants/invites/accept", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData<TenantInviteAcceptResult>(r),
+      invalidatesTags: ["TenantInvites"],
     }),
     getTraining: build.query<TenantTrainingSchema, number | void>({
       query: (tenantId) =>
@@ -626,6 +716,11 @@ export const {
   usePutAiSettingsMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
+  useListTenantInvitesQuery,
+  useCreateTenantInviteMutation,
+  useRevokeTenantInviteMutation,
+  usePreviewTenantInviteQuery,
+  useAcceptTenantInviteMutation,
   useGetTrainingQuery,
   usePutTrainingMutation,
   useUploadLogoMutation,

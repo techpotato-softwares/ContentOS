@@ -75,7 +75,6 @@ export function LoginPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
-    setInfo(null)
     if (mode === "register" && !companyName.trim()) {
       setFormError("Company name is required.")
       return
