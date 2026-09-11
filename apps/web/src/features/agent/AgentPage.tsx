@@ -13,6 +13,8 @@ import {
   Square,
   X,
   RotateCcw,
+  ChevronDown,
+  SlidersHorizontal,
 } from "lucide-react"
 import {
   useChatMutation,
@@ -257,6 +259,8 @@ export function AgentPage() {
   const [attachImage, setAttachImage] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
+  const [mobilePane, setMobilePane] = useState<"chats" | "brief" | "artifacts">("brief")
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
   const [quickPublish, quickPublishState] = useQuickPublishPostMutation()
   const { data: liStatus } = useLinkedInStatusQuery()
   const linkedInReady = Boolean(
@@ -863,74 +867,239 @@ export function AgentPage() {
           ]
         : []
 
+  const selectClass =
+    "h-10 sm:h-8 w-full sm:w-auto rounded-lg border border-border bg-background/70 px-2.5 text-xs min-w-0"
+
+  const textProviderLabel =
+    modelsPayload?.textProviders?.find((p) => p.id === aiProvider)?.label || aiProvider
+  const imageModelLabel =
+    modelsPayload?.models?.find((m) => m.id === imageModel)?.label || imageModel
+  const presetShort = preset.replace("linkedin_", "")
+  const renderShort = renderMode === "template" ? "Template" : "Native"
+  const generateLabel =
+    postFormat === "carousel"
+      ? "Carousel"
+      : postFormat === "text"
+        ? "Research"
+        : "Generate"
+
   return (
-    <div className="flex flex-col h-full min-h-0 gap-3 overflow-hidden">
-      <header className="shrink-0 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl md:text-3xl leading-tight">Agent</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Brief · URL · PDF → 3 variants → score → schedule
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
-            value={aiProvider}
-            onChange={(e) => setAiProvider(e.target.value)}
-            disabled={busy}
-            title="Text / planning model (images stay on OpenAI)"
-          >
-            {(
-              modelsPayload?.textProviders || [
-                { id: "openai", label: "OpenAI", model: "gpt-4o-mini", available: true },
-                { id: "gemini", label: "Google Gemini", model: "gemini-2.0-flash", available: false },
-              ]
-            ).map((p) => (
-              <option key={p.id} value={p.id} disabled={!p.available}>
-                Text: {p.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
-            value={preset}
-            onChange={(e) => setPreset(e.target.value)}
-            disabled={busy}
-          >
-            {(modelsPayload?.presets || [{ id: "linkedin_landscape", width: 1920, height: 1005 }]).map(
-              (p) => (
-                <option key={p.id} value={p.id}>
-                  {p.id.replace("linkedin_", "")} ({p.width}×{p.height})
+    <div className="flex flex-col h-full min-h-0 gap-2 sm:gap-3 overflow-hidden">
+      <header className="shrink-0 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-display text-xl sm:text-2xl md:text-3xl leading-tight">Agent</h1>
+            <p className="hidden sm:block text-xs text-muted-foreground mt-0.5">
+              Brief · URL · PDF → 3 variants → score → schedule
+            </p>
+          </div>
+          {/* Desktop model controls */}
+          <div className="hidden sm:flex sm:flex-wrap gap-2 w-auto justify-end">
+            <select
+              className={selectClass}
+              value={aiProvider}
+              onChange={(e) => setAiProvider(e.target.value)}
+              disabled={busy}
+              title="Text / planning model (images stay on OpenAI)"
+            >
+              {(
+                modelsPayload?.textProviders || [
+                  { id: "openai", label: "OpenAI", model: "gpt-4o-mini", available: true },
+                  { id: "gemini", label: "Google Gemini", model: "gemini-2.0-flash", available: false },
+                ]
+              ).map((p) => (
+                <option key={p.id} value={p.id} disabled={!p.available}>
+                  Text: {p.label}
                 </option>
-              ),
-            )}
-          </select>
-          <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs max-w-[160px]"
-            value={imageModel}
-            onChange={(e) => setImageModel(e.target.value)}
-            disabled={busy}
+              ))}
+            </select>
+            <select
+              className={selectClass}
+              value={preset}
+              onChange={(e) => setPreset(e.target.value)}
+              disabled={busy}
+            >
+              {(modelsPayload?.presets || [{ id: "linkedin_landscape", width: 1920, height: 1005 }]).map(
+                (p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.id.replace("linkedin_", "")} ({p.width}×{p.height})
+                  </option>
+                ),
+              )}
+            </select>
+            <select
+              className={cn(selectClass, "sm:max-w-40")}
+              value={imageModel}
+              onChange={(e) => setImageModel(e.target.value)}
+              disabled={busy}
+            >
+              {(modelsPayload?.models || []).map((m) => (
+                <option key={m.id} value={m.id} disabled={!m.available}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className={selectClass}
+              value={renderMode}
+              onChange={(e) => setRenderMode(e.target.value as "template" | "native_text")}
+              disabled={busy}
+            >
+              <option value="template">Template overlay</option>
+              <option value="native_text">Native text</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Mobile: collapsed model settings */}
+        <div className="sm:hidden">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-xl border border-border/80 bg-background/50 px-3 py-2.5 text-left"
+            aria-expanded={mobileSettingsOpen}
+            onClick={() => setMobileSettingsOpen((o) => !o)}
           >
-            {(modelsPayload?.models || []).map((m) => (
-              <option key={m.id} value={m.id} disabled={!m.available}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-8 rounded-lg border border-border bg-background/70 px-2 text-xs"
-            value={renderMode}
-            onChange={(e) => setRenderMode(e.target.value as "template" | "native_text")}
-            disabled={busy}
-          >
-            <option value="template">Template overlay</option>
-            <option value="native_text">Native text</option>
-          </select>
+            <SlidersHorizontal className="h-4 w-4 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{textProviderLabel}</span>
+              {" · "}
+              {presetShort}
+              {" · "}
+              {imageModelLabel}
+              {" · "}
+              {renderShort}
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                mobileSettingsOpen && "rotate-180",
+              )}
+            />
+          </button>
+          {mobileSettingsOpen && (
+            <div className="mt-2 grid grid-cols-1 gap-2 rounded-xl border border-border/70 bg-muted/20 p-2.5">
+              <label className="space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Text model
+                </span>
+                <select
+                  className={selectClass}
+                  value={aiProvider}
+                  onChange={(e) => setAiProvider(e.target.value)}
+                  disabled={busy}
+                >
+                  {(
+                    modelsPayload?.textProviders || [
+                      { id: "openai", label: "OpenAI", model: "gpt-4o-mini", available: true },
+                      {
+                        id: "gemini",
+                        label: "Google Gemini",
+                        model: "gemini-2.0-flash",
+                        available: false,
+                      },
+                    ]
+                  ).map((p) => (
+                    <option key={p.id} value={p.id} disabled={!p.available}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Image size
+                </span>
+                <select
+                  className={selectClass}
+                  value={preset}
+                  onChange={(e) => setPreset(e.target.value)}
+                  disabled={busy}
+                >
+                  {(
+                    modelsPayload?.presets || [
+                      { id: "linkedin_landscape", width: 1920, height: 1005 },
+                    ]
+                  ).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.id.replace("linkedin_", "")} ({p.width}×{p.height})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Image model
+                </span>
+                <select
+                  className={selectClass}
+                  value={imageModel}
+                  onChange={(e) => setImageModel(e.target.value)}
+                  disabled={busy}
+                >
+                  {(modelsPayload?.models || []).map((m) => (
+                    <option key={m.id} value={m.id} disabled={!m.available}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Render
+                </span>
+                <select
+                  className={selectClass}
+                  value={renderMode}
+                  onChange={(e) => setRenderMode(e.target.value as "template" | "native_text")}
+                  disabled={busy}
+                >
+                  <option value="template">Template overlay</option>
+                  <option value="native_text">Native text</option>
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       </header>
 
+      <div
+        className="lg:hidden shrink-0 grid grid-cols-3 gap-1 rounded-2xl border border-border/80 bg-background/40 p-1"
+        role="tablist"
+        aria-label="Agent panes"
+      >
+        {(
+          [
+            { id: "chats" as const, label: "Chats" },
+            { id: "brief" as const, label: "Brief" },
+            { id: "artifacts" as const, label: "Artifacts" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={mobilePane === tab.id}
+            className={cn(
+              "min-h-10 rounded-xl text-xs font-medium transition-colors",
+              mobilePane === tab.id
+                ? "bg-primary text-primary-foreground shadow-glow"
+                : "text-muted-foreground hover:bg-muted/70",
+            )}
+            onClick={() => setMobilePane(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid lg:grid-cols-[200px_minmax(0,1.1fr)_minmax(0,0.95fr)] gap-3 flex-1 min-h-0 overflow-hidden">
-        <aside className="min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/30 p-2">
+        <aside
+          className={cn(
+            "min-h-0 flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/30 p-2",
+            mobilePane === "chats" ? "flex" : "hidden",
+            "lg:flex",
+          )}
+        >
           <div className="flex items-center justify-between px-1 shrink-0">
             <span className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
               <History className="h-3.5 w-3.5" />
@@ -945,7 +1114,10 @@ export function AgentPage() {
               <button
                 key={s.sessionId}
                 type="button"
-                onClick={() => void openSession(s.sessionId)}
+                onClick={() => {
+                  void openSession(s.sessionId)
+                  setMobilePane("brief")
+                }}
                 className={cn(
                   "w-full text-left rounded-xl px-2.5 py-2 text-[11px] border border-transparent hover:bg-muted/80 transition-colors",
                   sessionId === s.sessionId && "bg-primary/12 border-primary/25",
@@ -962,14 +1134,20 @@ export function AgentPage() {
           </div>
         </aside>
 
-        <section className="relative min-h-0 flex flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/40">
-          <div className="shrink-0 border-b border-border/60 px-3 py-2 space-y-2">
+        <section
+          className={cn(
+            "relative min-h-0 flex-col gap-2 overflow-hidden rounded-2xl border border-border/80 bg-background/40",
+            mobilePane === "brief" ? "flex" : "hidden",
+            "lg:flex",
+          )}
+        >
+          <div className="shrink-0 border-b border-border/60 px-2.5 sm:px-3 py-2 space-y-2">
             <div className="flex gap-2">
-              <div className="relative flex-1">
+              <div className="relative flex-1 min-w-0">
                 <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <input
-                  className="h-8 w-full rounded-lg border border-border bg-background/70 pl-8 pr-2 text-xs"
-                  placeholder="Repurpose from URL…"
+                  className="h-10 sm:h-8 w-full rounded-lg border border-border bg-background/70 pl-8 pr-2 text-xs"
+                  placeholder="URL to repurpose…"
                   value={repurposeUrl}
                   onChange={(e) => setRepurposeUrl(e.target.value)}
                   disabled={busy}
@@ -980,7 +1158,7 @@ export function AgentPage() {
               </div>
               <Button
                 size="sm"
-                className="h-8"
+                className="h-10 sm:h-8 w-12 shrink-0 px-0"
                 variant="secondary"
                 disabled={busy || !repurposeUrl.trim()}
                 onClick={() => void onRepurposeUrl()}
@@ -989,13 +1167,14 @@ export function AgentPage() {
               </Button>
               <Button
                 size="sm"
-                className="h-8"
+                className="h-10 sm:h-8 w-12 shrink-0 px-0"
                 variant="outline"
                 disabled={busy}
+                title="Upload PDF"
+                aria-label="Upload PDF"
                 onClick={() => fileRef.current?.click()}
               >
                 <FileUp className="h-3.5 w-3.5" />
-                PDF
               </Button>
               <input
                 ref={fileRef}
@@ -1102,7 +1281,7 @@ export function AgentPage() {
             <div ref={chatEndRef} />
           </div>
 
-          <div className="shrink-0 border-t border-border/60 p-3 space-y-2 bg-background/50">
+          <div className="shrink-0 border-t border-border/60 p-2.5 sm:p-3 space-y-2 bg-background/50">
             {draftNotice && !busy && (
               <p className="text-xs text-primary">{draftNotice}</p>
             )}
@@ -1112,7 +1291,7 @@ export function AgentPage() {
               onChange={(e) => setInput(e.target.value)}
               placeholder={PLACEHOLDER_SEND}
               disabled={busy || extracting}
-              className="min-h-[72px] max-h-[120px] resize-none text-sm"
+              className="min-h-16 sm:min-h-18 max-h-28 sm:max-h-30 resize-none text-sm"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
@@ -1120,14 +1299,12 @@ export function AgentPage() {
                 }
               }}
             />
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                Format
-              </label>
+            <div className="flex items-center gap-2">
               <select
-                className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                className="h-9 sm:h-7 min-w-0 flex-1 sm:flex-none rounded-md border border-border bg-background px-2 text-xs"
                 value={postFormat}
                 disabled={busy}
+                aria-label="Post format"
                 onChange={(e) =>
                   setPostFormat(e.target.value as "text" | "image" | "carousel")
                 }
@@ -1137,7 +1314,7 @@ export function AgentPage() {
                 <option value="carousel">Carousel</option>
               </select>
               {postFormat === "text" && (
-                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <label className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <input
                     type="checkbox"
                     className="rounded border-border"
@@ -1148,7 +1325,7 @@ export function AgentPage() {
                   Attach image
                 </label>
               )}
-              <div className="flex gap-2 flex-1 justify-end">
+              <div className="hidden sm:flex gap-2 flex-1 justify-end">
                 <Button
                   onClick={() => void send()}
                   disabled={
@@ -1157,7 +1334,7 @@ export function AgentPage() {
                     extracting ||
                     (!(stagedPdf || stagedUrl) && !input.trim())
                   }
-                  className="min-w-[88px]"
+                  className="min-w-22"
                   size="sm"
                 >
                   Send
@@ -1166,7 +1343,7 @@ export function AgentPage() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    className="gap-1.5 min-w-[110px]"
+                    className="gap-1.5 min-w-27.5"
                     onClick={cancelGenerate}
                   >
                     <Square className="h-3 w-3 fill-current" />
@@ -1182,6 +1359,53 @@ export function AgentPage() {
                   </Button>
                 )}
               </div>
+            </div>
+            {postFormat === "text" && (
+              <label className="flex sm:hidden items-center gap-1.5 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="rounded border-border"
+                  checked={attachImage}
+                  disabled={busy}
+                  onChange={(e) => setAttachImage(e.target.checked)}
+                />
+                Attach image
+              </label>
+            )}
+            <div className="grid grid-cols-2 gap-2 sm:hidden">
+              <Button
+                onClick={() => void send()}
+                disabled={
+                  chatState.isLoading ||
+                  busy ||
+                  extracting ||
+                  (!(stagedPdf || stagedUrl) && !input.trim())
+                }
+                className="h-10"
+                size="sm"
+              >
+                Send
+              </Button>
+              {busy ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-10 gap-1.5"
+                  onClick={cancelGenerate}
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-10"
+                  onClick={() => void onGenerate()}
+                >
+                  {generateLabel}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1238,7 +1462,13 @@ export function AgentPage() {
           </AnimatePresence>
         </section>
 
-        <section className="min-h-0 flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/30">
+        <section
+          className={cn(
+            "min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-background/30",
+            mobilePane === "artifacts" ? "flex" : "hidden",
+            "lg:flex",
+          )}
+        >
           <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
             <div>
               <h2 className="font-display text-lg leading-tight">Artifacts</h2>
@@ -1301,7 +1531,7 @@ export function AgentPage() {
 
             {displayBatches.map((batch, bi) => (
               <div key={batch.batchId || bi} className="space-y-2">
-                <div className="flex items-center justify-between gap-2 sticky top-0 z-[1] bg-background/90 backdrop-blur-sm py-1">
+                <div className="flex items-center justify-between gap-2 sticky top-0 z-1 bg-background/90 backdrop-blur-sm py-1">
                   <div className="min-w-0">
                     <p className="text-[11px] font-medium truncate">
                       Batch #{batch.batchId}
@@ -1341,7 +1571,7 @@ export function AgentPage() {
             ))}
 
             {!displayBatches.length && !busy && (
-              <div className="h-full min-h-[200px] flex items-center justify-center text-center px-6">
+              <div className="h-full min-h-50 flex items-center justify-center text-center px-6">
                 <p className="text-sm text-muted-foreground">
                   All generated creatives for this chat appear here.
                 </p>

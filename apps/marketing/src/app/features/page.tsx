@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { appLoginUrl } from "@/lib/appUrl";
 import { PageHero } from "@/components/PageHero";
 import { MarketingCTA } from "@/components/MarketingCTA";
+import { MarketingImage } from "@/components/MarketingImage";
 import { Reveal } from "@/components/Reveal";
 
 export const metadata: Metadata = {
@@ -56,7 +58,7 @@ export default function FeaturesPage() {
         eyebrow="Features"
         title="Built for marketers who care about control."
         description="ContentOS is not a one-click spam tool. It is a LinkedIn content OS — brand training, generation, review, and publishing in one place."
-        primaryCta={{ href: "/contact", label: "Book a demo" }}
+        primaryCta={{ href: appLoginUrl(), label: "Start Free" }}
         secondaryCta={{ href: "/pricing", label: "Compare plans" }}
       />
 
@@ -68,6 +70,35 @@ export default function FeaturesPage() {
               <p className="mt-1 text-xs leading-relaxed text-steel">{item.copy}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="section !pb-4">
+        <div className="section-inner">
+          <Reveal>
+            <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="eyebrow">Product surface</p>
+                <h2 className="display mt-2 max-w-xl text-2xl text-ink md:text-3xl">
+                  Train, draft, and approve in one view.
+                </h2>
+              </div>
+              <p className="max-w-sm text-sm text-steel md:text-right">
+                Brand memory in, human approval out — every LinkedIn post stays on-voice.
+              </p>
+            </div>
+            <MarketingImage
+              src="/images/product-review.webp"
+              alt="ContentOS features — brand training, agent drafts, and human review"
+              variant="banner"
+              badge="Workspace"
+              eyebrow="ContentOS"
+              caption="The operating system behind on-brand LinkedIn."
+              className="aspect-[16/9] w-full md:aspect-[2.35/1]"
+              sizes="100vw"
+              priority
+            />
+          </Reveal>
         </div>
       </section>
 
@@ -89,8 +120,8 @@ export default function FeaturesPage() {
           ))}
         </div>
         <div className="section-inner mt-12 flex flex-wrap gap-3">
-          <Link href="/contact" className="btn-primary btn-demo">
-            Book a demo
+          <Link href={appLoginUrl()} className="btn-primary btn-demo">
+            Start Free
           </Link>
           <Link href="/use-cases" className="btn-secondary">
             See who it&apos;s for
@@ -100,7 +131,7 @@ export default function FeaturesPage() {
 
       <MarketingCTA
         title="Ready to evaluate ContentOS?"
-        description="Book a walkthrough with your brand context — see train, generate, review, and publish in one session."
+        description="Start free with your brand context — see train, generate, review, and publish in one session."
         secondary={{ href: "/product", label: "How it works" }}
       />
     </>

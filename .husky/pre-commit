@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# Block secrets / local env files from being committed
+blocked="$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)\.env($|\.)|(^|/)env\.local\.json$|(^|/)credentials\.json$' | grep -vE '\.env\.example$' || true)"
+if [ -n "$blocked" ]; then
+  echo "ERROR: Refusing to commit secret/env files:"
+  echo "$blocked"
+  echo "Remove them from the index (git restore --staged <file>) and keep them gitignored."
+  exit 1
+fi
+
+npx lint-staged

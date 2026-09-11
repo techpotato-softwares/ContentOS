@@ -22,6 +22,69 @@ export type TenantRow = {
   accentColor?: string
 }
 
+export type TenantInviteRow = {
+  inviteId: number
+  email: string
+  role: string
+  status: string
+  expiresAt?: string | null
+  invitedBy?: number | null
+  tenantId?: number
+  tenantName?: string | null
+  createdAt?: string | null
+  acceptedAt?: string | null
+}
+
+export type TenantInvitePreview = {
+  email: string
+  role: string
+  expiresAt?: string | null
+  tenantName?: string | null
+  status: string
+}
+
+export type TenantInviteAcceptResult = {
+  accepted: boolean
+  registered?: boolean
+  tenantId?: number
+  role?: string
+  accessToken: string
+  refreshToken: string
+  user: {
+    userId: number
+    username: string
+    email?: string | null
+    roleName?: string | null
+    tenantId?: number | null
+    permissions?: string[]
+    modulesEnabled?: string[]
+    emailVerified?: boolean
+  }
+}
+
+export type AiSettingsPayload = {
+  aiBillingMode: "platform" | "byok" | string
+  planTier: string
+  byokAllowed: boolean
+  quota: {
+    monthlyLimit: number
+    usedThisMonth: number
+    month: string
+    remaining: number
+  }
+  keys: {
+    openaiConfigured: boolean
+    geminiConfigured: boolean
+  }
+  plans: Array<{
+    id: string
+    label: string
+    monthlyUsd: number
+    quota: number
+    byokAllowed: boolean
+  }>
+}
+
 export type ContentPost = {
   postId: number
   batchId?: number
@@ -240,54 +303,35 @@ export const contentApi = createApi({
       transformResponse: (r: unknown) => unwrapData<ThemePayload>(r),
       providesTags: ["Theme"],
     }),
-    getOnboarding: build.query<
-      {
-        version: number
-        status: "pending" | "completed" | "skipped"
-        steps: {
-          linkedin: boolean
-          training: boolean
-          generate: boolean
-          publish: boolean
-        }
-        skippedAt?: string | null
-        completedAt?: string | null
-        updatedAt?: string | null
-        visible: boolean
-        stepOrder: string[]
-      },
-      void
+    createCheckoutSession: build.mutation<
+      { url: string; sessionId: string },
+      { planTier: string; successUrl?: string; cancelUrl?: string }
     >({
-      query: () => "/api/tenants/me/onboarding",
+      query: (body) => ({ url: "/api/billing/checkout-session", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData(r),
-      providesTags: ["Onboarding"],
     }),
-    skipOnboarding: build.mutation<
-      {
-        status: string
-        visible: boolean
-        steps: Record<string, boolean>
-      },
-      void
-    >({
-      query: () => ({ url: "/api/tenants/me/onboarding/skip", method: "POST" }),
+    createPortalSession: build.mutation<{ url: string }, void>({
+      query: () => ({ url: "/api/billing/portal-session", method: "POST", body: {} }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Onboarding"],
     }),
-    completeOnboardingStep: build.mutation<
+    getAiSettings: build.query<AiSettingsPayload, void>({
+      query: () => "/api/tenants/me/ai-settings",
+      transformResponse: (r: unknown) => unwrapData<AiSettingsPayload>(r),
+      providesTags: ["AiSettings"],
+    }),
+    putAiSettings: build.mutation<
+      AiSettingsPayload,
       {
-        status: string
-        visible: boolean
-        steps: Record<string, boolean>
-      },
-      string
+        aiBillingMode?: "platform" | "byok"
+        openaiApiKey?: string
+        geminiApiKey?: string
+        clearOpenai?: boolean
+        clearGemini?: boolean
+      }
     >({
-      query: (step) => ({
-        url: `/api/tenants/me/onboarding/steps/${step}/complete`,
-        method: "POST",
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Onboarding"],
+      query: (body) => ({ url: "/api/tenants/me/ai-settings", method: "PUT", body }),
+      transformResponse: (r: unknown) => unwrapData<AiSettingsPayload>(r),
+      invalidatesTags: ["AiSettings", "Billing"],
     }),
     listTenants: build.query<TenantRow[], void>({
       query: () => "/api/admin/tenants",
@@ -298,6 +342,44 @@ export const contentApi = createApi({
       query: (body) => ({ url: "/api/admin/tenants", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData<TenantRow>(r),
       invalidatesTags: ["Tenants"],
+    }),
+    listTenantInvites: build.query<{ invites: TenantInviteRow[] }, void>({
+      query: () => "/api/tenants/invites",
+      transformResponse: (r: unknown) => unwrapData<{ invites: TenantInviteRow[] }>(r),
+      providesTags: ["TenantInvites"],
+    }),
+    createTenantInvite: build.mutation<
+      { invite: TenantInviteRow; emailSent: boolean; emailReason?: string },
+      { email: string; role?: "tenant_member" | "tenant_admin" }
+    >({
+      query: (body) => ({ url: "/api/tenants/invites", method: "POST", body }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ invite: TenantInviteRow; emailSent: boolean; emailReason?: string }>(r),
+      invalidatesTags: ["TenantInvites"],
+    }),
+    revokeTenantInvite: build.mutation<
+      { invite: TenantInviteRow; revoked: boolean },
+      number
+    >({
+      query: (inviteId) => ({
+        url: `/api/tenants/invites/${inviteId}`,
+        method: "DELETE",
+      }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ invite: TenantInviteRow; revoked: boolean }>(r),
+      invalidatesTags: ["TenantInvites"],
+    }),
+    previewTenantInvite: build.query<TenantInvitePreview, string>({
+      query: (token) => `/api/tenants/invites/preview?token=${encodeURIComponent(token)}`,
+      transformResponse: (r: unknown) => unwrapData<TenantInvitePreview>(r),
+    }),
+    acceptTenantInvite: build.mutation<
+      TenantInviteAcceptResult,
+      { token: string; username?: string; email?: string; password?: string }
+    >({
+      query: (body) => ({ url: "/api/tenants/invites/accept", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData<TenantInviteAcceptResult>(r),
+      invalidatesTags: ["TenantInvites"],
     }),
     getTraining: build.query<TenantTrainingSchema, number | void>({
       query: (tenantId) =>
@@ -621,6 +703,11 @@ export const {
   useCompleteOnboardingStepMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
+  useListTenantInvitesQuery,
+  useCreateTenantInviteMutation,
+  useRevokeTenantInviteMutation,
+  usePreviewTenantInviteQuery,
+  useAcceptTenantInviteMutation,
   useGetTrainingQuery,
   usePutTrainingMutation,
   useUploadLogoMutation,

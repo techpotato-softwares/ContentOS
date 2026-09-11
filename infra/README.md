@@ -64,7 +64,9 @@ Defaults come from `infra/config/environment.py`. Override per environment if ne
 | `DB_USERNAME` | DB user (default `postgres`) |
 | `CUSTOM_DOMAIN` | Prod CloudFront alias |
 | `CLOUDFRONT_CERTIFICATE_ARN` | ACM cert in `us-east-1` for custom domain |
-| `SES_FROM_EMAIL` | Weekly snapshot from-address |
+| `SES_FROM_EMAIL` / `FROM_EMAIL` | Auth verify/reset + weekly snapshot from-address |
+| `FRONTEND_URL` | Base URL for email verification / password-reset links |
+| `SES_ENABLED` | `true` in deployed envs so Lambdas send via SES |
 
 IAM user for the access key needs rights for CloudFormation, CDK bootstrap assets, Lambda, API Gateway, S3, CloudFront, Secrets Manager, IAM, and (prod) EC2/RDS/VPC.
 

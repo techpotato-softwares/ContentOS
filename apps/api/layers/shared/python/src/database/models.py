@@ -31,9 +31,10 @@ class Tenant(SQLModel, table=True):
 
 
 class User(SQLModel, table=True):
-    """App user. Tenant membership is ``tenant_id`` + ``role_id`` (no separate join table).
+    """App user. Tenant membership is ``tenant_id`` + ``role_id``.
 
-    Self-serve signup creates User + Tenant with ``tenant_admin`` role atomically.
+    ``email_verified_at`` gates publishing. ``token_version`` invalidates JWTs
+    after password reset (must match claim ``tv``).
     """
 
     __tablename__ = "users"
@@ -44,8 +45,24 @@ class User(SQLModel, table=True):
     password: str
     role_id: Optional[int] = Field(default=None, foreign_key="roles.role_id")
     is_active: bool = True
+    email_verified_at: Optional[datetime] = Field(default=None, index=True)
+    token_version: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AuthToken(SQLModel, table=True):
+    """One-time auth tokens (email verify / password reset). Store only ``token_hash``."""
+
+    __tablename__ = "auth_tokens"
+    token_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id", index=True)
+    purpose: str = Field(index=True)  # email_verify | password_reset
+    token_hash: str = Field(unique=True, index=True)
+    expires_at: datetime = Field(index=True)
+    used_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    request_key: Optional[str] = Field(default=None, index=True)  # hashed email for rate limits
 
 
 class Role(SQLModel, table=True):
@@ -186,6 +203,25 @@ class AuditLog(SQLModel, table=True):
     resource_id: Optional[str] = None
     detail: Optional[str] = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TenantInvite(SQLModel, table=True):
+    """Team invite. ``token`` stores a SHA-256 hash of the raw secret — never the raw value."""
+
+    __tablename__ = "tenant_invites"
+    __table_args__ = (UniqueConstraint("token", name="uq_tenant_invites_token"),)
+    invite_id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
+    email: str = Field(index=True)
+    role: str = Field(default="tenant_member")  # tenant_member | tenant_admin
+    token: str = Field(index=True)  # sha256 hex of raw invite token
+    expires_at: datetime
+    invited_by: Optional[int] = Field(default=None, foreign_key="users.user_id")
+    status: str = Field(default="pending", index=True)  # pending|accepted|revoked|expired
+    accepted_by_user_id: Optional[int] = None
+    accepted_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # Keep demo table for kit compatibility (disabled in ContentOS modules by default)
