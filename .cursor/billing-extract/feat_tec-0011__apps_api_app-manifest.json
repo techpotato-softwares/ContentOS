@@ -1,4 +1,4 @@
-{
+﻿{
   "version": "2.0.0",
   "runtime": "python",
   "generatedAt": "2026-07-28T00:00:00Z",
@@ -33,20 +33,11 @@
         { "method": "GET", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "list_docs" },
         { "method": "POST", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "create_doc" },
         { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" },
-        { "method": "POST", "path": "/api/tenants/invites", "controller": "InvitesController", "action": "create_invite" },
-        { "method": "GET", "path": "/api/tenants/invites", "controller": "InvitesController", "action": "list_invites" },
-        { "method": "DELETE", "path": "/api/tenants/invites/{inviteId}", "controller": "InvitesController", "action": "revoke_invite" },
-        { "method": "GET", "path": "/api/tenants/invites/preview", "controller": "InvitesController", "action": "preview_invite" },
-        { "method": "POST", "path": "/api/tenants/invites/accept", "controller": "InvitesController", "action": "accept_invite" },
         { "method": "GET", "path": "/api/billing/plans", "controller": "BillingController", "action": "list_plans" },
         { "method": "GET", "path": "/api/billing/summary", "controller": "BillingController", "action": "billing_summary" },
         { "method": "POST", "path": "/api/billing/checkout-session", "controller": "BillingController", "action": "checkout_session" },
         { "method": "POST", "path": "/api/billing/portal-session", "controller": "BillingController", "action": "portal_session" },
-        { "method": "POST", "path": "/api/billing/webhook", "controller": "BillingController", "action": "stripe_webhook" },
-        { "method": "POST", "path": "/api/billing/razorpay/subscription", "controller": "BillingController", "action": "razorpay_subscription" },
-        { "method": "POST", "path": "/api/billing/razorpay/payment-link", "controller": "BillingController", "action": "razorpay_payment_link" },
-        { "method": "POST", "path": "/api/billing/razorpay/cancel", "controller": "BillingController", "action": "razorpay_cancel" },
-        { "method": "POST", "path": "/api/billing/razorpay/webhook", "controller": "BillingController", "action": "razorpay_webhook" }
+        { "method": "POST", "path": "/api/billing/webhook", "controller": "BillingController", "action": "stripe_webhook" }
       ]
     },
     "agent": {

@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlmodel import select
@@ -23,6 +23,11 @@ from utils.ses_mail import send_email
 ALLOWED_INVITE_ROLES = frozenset({"tenant_member", "tenant_admin"})
 INVITE_TTL_DAYS = 7
 INVITE_STATUSES = frozenset({"pending", "accepted", "revoked", "expired"})
+
+
+def _utcnow() -> datetime:
+    """Naive UTC now — matches DB columns that store timezone-unaware datetimes."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def hash_invite_token(raw_token: str) -> str:
@@ -80,7 +85,7 @@ def _normalize_role(role: str | None) -> str:
 
 
 def mark_expired_if_needed(invite: TenantInvite, now: datetime | None = None) -> TenantInvite:
-    now = now or datetime.utcnow()
+    now = now or _utcnow()
     if invite.status == "pending" and invite.expires_at and invite.expires_at < now:
         invite.status = "expired"
         invite.updated_at = now
@@ -107,7 +112,7 @@ def find_pending_invite(session, *, tenant_id: int, email: str) -> TenantInvite 
             TenantInvite.status == "pending",
         )
     ).all()
-    now = datetime.utcnow()
+    now = _utcnow()
     for inv in rows:
         mark_expired_if_needed(inv, now)
         if inv.status == "pending":
@@ -133,12 +138,16 @@ def create_or_refresh_invite(
     if existing_user and existing_user.tenant_id == tenant.tenant_id:
         raise ConflictError("This user is already a member of your workspace")
 
+    tenant_id = tenant.tenant_id
+    if tenant_id is None:
+        raise ValidationError("Tenant is missing an id")
+
     raw = generate_invite_token()
     token_hash = hash_invite_token(raw)
-    now = datetime.utcnow()
+    now = _utcnow()
     expires = now + timedelta(days=INVITE_TTL_DAYS)
 
-    pending = find_pending_invite(session, tenant_id=int(tenant.tenant_id), email=email)
+    pending = find_pending_invite(session, tenant_id=tenant_id, email=email)
     if pending:
         pending.token = token_hash
         pending.role = role
@@ -150,7 +159,7 @@ def create_or_refresh_invite(
         return pending, raw
 
     invite = TenantInvite(
-        tenant_id=int(tenant.tenant_id),
+        tenant_id=tenant_id,
         email=email,
         role=role,
         token=token_hash,
@@ -240,7 +249,7 @@ def load_invite_by_raw_token(session, raw_token: str) -> TenantInvite:
     if invite.status == "accepted":
         raise AppError("This invite has already been used", 410, "INVITE_USED")
     if invite.status == "expired" or (
-        invite.expires_at and invite.expires_at < datetime.utcnow()
+        invite.expires_at and invite.expires_at < _utcnow()
     ):
         invite.status = "expired"
         raise AppError("This invite has expired", 410, "INVITE_EXPIRED")
@@ -261,13 +270,13 @@ def accept_invite_for_user(session, invite: TenantInvite, user: User) -> User:
     if not tenant or not tenant.is_active:
         raise NotFoundError("Tenant not found")
 
-    if user.tenant_id and int(user.tenant_id) != int(invite.tenant_id):
+    if user.tenant_id and user.tenant_id != invite.tenant_id:
         raise ConflictError(
             "You already belong to another workspace. Leave it before accepting this invite."
         )
 
     role = get_role_by_name(session, invite.role)
-    now = datetime.utcnow()
+    now = _utcnow()
     user.tenant_id = invite.tenant_id
     user.role_id = role.role_id
     user.updated_at = now

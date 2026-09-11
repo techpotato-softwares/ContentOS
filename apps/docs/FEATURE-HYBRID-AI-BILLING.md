@@ -36,16 +36,29 @@ Long-term monetization: **platform mode is the default revenue engine**; **BYOK 
 
 Use these as defaults in code (`PLAN_CATALOG`), not hard-coded magic numbers scattered in controllers.
 
-| Plan | Monthly (USD) | Included AI posts/mo | BYOK allowed |
-|------|---------------|----------------------|--------------|
-| **Starter** | $49 | 40 | No |
-| **Growth** | $149 | 150 | Yes (+$79/mo add-on **or** included — product choice; start with **included on Growth+**) |
-| **Scale** | $399 | 500 | Yes |
-| **Agency** | $299–$499 | 0 on platform (BYOK required) or small trial quota | Yes (required) |
+| Plan | Monthly (USD) · Stripe | Monthly (INR) · Razorpay | Included AI posts/mo | BYOK allowed |
+|------|------------------------|--------------------------|----------------------|--------------|
+| **Starter** | $49 | **₹4,099** | 40 | No |
+| **Growth** | $149 | **₹12,499** | 150 | Yes |
+| **Scale** | $399 | **₹33,499** | 500 | Yes |
+| **Agency** | $399 | **₹33,499** | small platform trial (50); BYOK expected | Yes |
 
-Overage (platform only): e.g. Starter **+$15 / 25 posts**, Growth **+$40 / 100 posts** (config table; Stripe later).
+### USD ↔ INR mapping (fixed product prices, not live FX)
+
+| Tier | USD | INR | Approx. ratio |
+|------|-----|-----|---------------|
+| starter | 49 | 4099 | ~₹83.7 / $ |
+| growth | 149 | 12499 | ~₹83.9 / $ |
+| scale | 399 | 33499 | ~₹84.0 / $ |
+| agency | 399 | 33499 | ~₹84.0 / $ |
+
+INR amounts are **canonical list prices** for Razorpay plans. Do not convert at runtime from USD.
+
+Overage (platform only): e.g. Starter **+$15 / 25 posts**, Growth **+$40 / 100 posts** (config table).
 
 Annual: ~2 months free (billing integration later — out of scope for v1).
+
+**Gateways:** one active gateway per tenant (`billing_gateway`: `stripe` \| `razorpay`). Switching = cancel then resubscribe.
 
 ---
 
@@ -137,6 +150,10 @@ Store ARN (or secret name) on `tenants.ai_secret_arn`. IAM already allows Get/Pu
 | `ai_posts_quota_monthly` | `INT` | from plan catalog | Snapshot; can override per tenant |
 | `ai_posts_used_month` | `INT` | `0` | Reset when month changes |
 | `ai_usage_month` | `VARCHAR` NULL | null | `YYYY-MM` for reset |
+| `billing_gateway` | `VARCHAR` NULL | null | `stripe` \| `razorpay` |
+| `stripe_customer_id` / `stripe_subscription_id` | `VARCHAR` NULL | null | Stripe ids |
+| `razorpay_customer_id` / `razorpay_subscription_id` | `VARCHAR` NULL | null | Razorpay ids |
+| `billing_status` | `VARCHAR` | `'none'` | Shared soft-lock status |
 
 Do **not** put keys in `training_json`.
 
@@ -397,6 +414,8 @@ Response: same shape as GET (without echoing keys).
 | Config language | Python `environment.py` (not TypeScript) |
 | Secret store | AWS Secrets Manager |
 | v1 metering unit | Generated content posts (generate batch variants) |
-| Stripe | Deferred |
+| USD billing | Stripe Checkout + Portal + webhooks |
+| INR billing | Razorpay subscriptions / payment links (UPI + cards) |
+| Double billing | Forbidden — cancel-then-resubscribe to switch gateway |
 
 Questions while implementing → ask tech lead before changing plan catalog prices or what counts as a billable unit.

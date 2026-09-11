@@ -1,5 +1,22 @@
 # Pricing & business model
 
+## ContentOS SaaS plans (hybrid AI billing)
+
+Canonical list prices live in `PLAN_CATALOG` (`utils/ai_billing.py`).
+
+| Plan | USD / mo (Stripe) | INR / mo (Razorpay) | AI posts | BYOK |
+|------|-------------------|---------------------|----------|------|
+| Starter | $49 | ₹4,099 | 40 | No |
+| Growth | $149 | ₹12,499 | 150 | Yes |
+| Scale | $399 | ₹33,499 | 500 | Yes |
+| Agency | $399 | ₹33,499 | 50 platform trial | Yes |
+
+**USD ↔ INR:** fixed product mapping (~₹83–84 / USD), not live FX. Razorpay Dashboard plan amounts must match the INR column exactly.
+
+See also: `FEATURE-HYBRID-AI-BILLING.md`, `STRIPE-BILLING.md`, `RAZORPAY-BILLING.md`.
+
+---
+
 ## Recommended one-time SKUs (USD)
 
 | SKU | Price | Includes |

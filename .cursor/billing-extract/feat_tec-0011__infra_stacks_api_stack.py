@@ -1,4 +1,4 @@
-"""Main ContentOS API stack — Python CDK."""
+﻿"""Main ContentOS API stack ΓÇö Python CDK."""
 from __future__ import annotations
 
 import os
@@ -25,7 +25,6 @@ from cdk_constructs.permissions.lambda_permissions import (
 from cdk_constructs.security.db_secrets_construct import DbSecretsConstruct
 from cdk_constructs.security.jwt_secrets_construct import JwtSecretsConstruct
 from cdk_constructs.security.stripe_secrets_construct import StripeSecretsConstruct
-from cdk_constructs.security.razorpay_secrets_construct import RazorpaySecretsConstruct
 from cdk_constructs.storage.s3_construct import S3Construct
 from paths import LAYER_BUNDLED, MARKETING_PATH, UI_BUILD_PATH
 from utils.manifest_reader import read_manifest
@@ -42,7 +41,7 @@ class ApiStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, description=config.description, **kwargs)
 
-        print(f"\n🚀 Building stack: {config.stack_name}")
+        print(f"\n≡ƒÜÇ Building stack: {config.stack_name}")
 
         for key, value in config.tags.items():
             Tags.of(self).add(key, value)
@@ -52,13 +51,13 @@ class ApiStack(Stack):
 
         rds_construct: RDSConstruct | None = None
         if config.features.rds:
-            print("\n🗄️  Creating RDS PostgreSQL instance...")
+            print("\n≡ƒùä∩╕Å  Creating RDS PostgreSQL instance...")
             rds_construct = RDSConstruct(self, "RDSConstruct", config=config)
             permission_providers.append(rds_construct)
 
             rds_cfg = get_rds_config(config.environment)
             if rds_cfg.schedule and rds_cfg.schedule.enabled:
-                print("\n⏰ Setting up RDS auto-start/stop scheduler...")
+                print("\nΓÅ░ Setting up RDS auto-start/stop scheduler...")
                 RDSSchedulerConstruct(
                     self,
                     "RDSSchedulerConstruct",
@@ -75,19 +74,19 @@ class ApiStack(Stack):
 
         db_secrets: DbSecretsConstruct | None = None
         if not config.features.rds:
-            print("\n🔐 Creating DB secret placeholder (Supabase)...")
+            print("\n≡ƒöÉ Creating DB secret placeholder (Supabase)...")
             db_secrets = DbSecretsConstruct(
                 self, "DbSecretsConstruct", config=config
             )
             permission_providers.append(db_secrets)
 
-        print("\n📦 Creating shared Python Lambda layer...")
+        print("\n≡ƒôª Creating shared Python Lambda layer...")
         shared_layer = lambda_.LayerVersion(
             self,
             "SharedLayer",
             layer_version_name=f"contentos-py-shared-layer-{config.environment}",
             description=(
-                "ContentOS Python shared layer — config, DB, router, JWT, training"
+                "ContentOS Python shared layer ΓÇö config, DB, router, JWT, training"
             ),
             code=lambda_.Code.from_asset(str(LAYER_BUNDLED)),
             compatible_runtimes=[
@@ -105,7 +104,7 @@ class ApiStack(Stack):
             ),
         )
 
-        print("\n⚡ Creating Lambda functions...")
+        print("\nΓÜí Creating Lambda functions...")
         lambda_construct = LambdaConstruct(
             self,
             "LambdaConstruct",
@@ -118,7 +117,7 @@ class ApiStack(Stack):
         static_site: StaticSiteConstruct | None = None
         cloudfront_url: str | None = None
         if config.features.static_site:
-            print("\n🌐 Creating static site hosting (S3 + CloudFront)...")
+            print("\n≡ƒîÉ Creating static site hosting (S3 + CloudFront)...")
             static_site = StaticSiteConstruct(
                 self,
                 "StaticSiteConstruct",
@@ -132,7 +131,7 @@ class ApiStack(Stack):
 
         s3_bucket_name: str | None = None
         if config.features.s3:
-            print("\n📦 Creating S3 buckets...")
+            print("\n≡ƒôª Creating S3 buckets...")
             additional_cors: list[str] = []
             if cloudfront_url:
                 additional_cors.append(cloudfront_url)
@@ -176,7 +175,7 @@ class ApiStack(Stack):
             ),
         ]
         if scheduled_lambdas:
-            print("\n⏰ Creating scheduled Lambda functions...")
+            print("\nΓÅ░ Creating scheduled Lambda functions...")
             scheduled = ScheduledLambdaConstruct(
                 self,
                 "ScheduledLambdaConstruct",
@@ -198,57 +197,20 @@ class ApiStack(Stack):
                     )
                 )
 
-        # Auth Lambda: verification + password-reset emails (least privilege SES)
-        auth_fn = lambda_construct.functions.get("auth")
-        if auth_fn:
-            from aws_cdk import aws_iam as iam
-
-            auth_fn.add_environment(
-                "SES_ENABLED", os.environ.get("SES_ENABLED", "true")
-            )
-            auth_fn.add_environment(
-                "SES_FROM_EMAIL",
-                os.environ.get("SES_FROM_EMAIL", os.environ.get("FROM_EMAIL", "noreply@contentos.app")),
-            )
-            auth_fn.add_environment(
-                "FROM_EMAIL",
-                os.environ.get("FROM_EMAIL", os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app")),
-            )
-            auth_fn.add_environment(
-                "FRONTEND_URL",
-                os.environ.get(
-                    "FRONTEND_URL",
-                    f"https://{config.custom_domain}" if config.custom_domain else "",
-                ),
-            )
-            auth_fn.add_to_role_policy(
-                iam.PolicyStatement(
-                    effect=iam.Effect.ALLOW,
-                    actions=["ses:SendEmail", "ses:SendRawEmail"],
-                    resources=["*"],
-                )
-            )
-
-        print("\n🔐 Creating JWT secrets...")
+        print("\n≡ƒöÉ Creating JWT secrets...")
         jwt_secrets = JwtSecretsConstruct(
             self, "JwtSecretsConstruct", config=config
         )
         permission_providers.append(jwt_secrets)
 
-        print("\n🔐 Creating Stripe secrets...")
+        print("\n≡ƒöÉ Creating Stripe secrets...")
         stripe_secrets = StripeSecretsConstruct(
             self, "StripeSecretsConstruct", config=config
         )
         permission_providers.append(stripe_secrets)
 
-        print("\n🔐 Creating Razorpay secrets...")
-        razorpay_secrets = RazorpaySecretsConstruct(
-            self, "RazorpaySecretsConstruct", config=config
-        )
-        permission_providers.append(razorpay_secrets)
-
         if permission_providers:
-            print("\n🔐 Applying permissions to Lambda functions...")
+            print("\n≡ƒöÉ Applying permissions to Lambda functions...")
             all_fns = {**lambda_construct.functions}
             if scheduled:
                 all_fns.update(scheduled.functions)
@@ -263,12 +225,12 @@ class ApiStack(Stack):
 
             if s3_bucket_name:
                 print(
-                    f"\n📦 Adding S3_BUCKET_NAME ({s3_bucket_name}) to Lambda environment..."
+                    f"\n≡ƒôª Adding S3_BUCKET_NAME ({s3_bucket_name}) to Lambda environment..."
                 )
                 for fn in lambda_construct.functions.values():
                     fn.add_environment("S3_BUCKET_NAME", s3_bucket_name)
 
-        print("\n🌐 Creating API Gateway routes...")
+        print("\n≡ƒîÉ Creating API Gateway routes...")
         ApiGatewayConstruct(
             self,
             "ApiGatewayConstruct",
@@ -277,4 +239,4 @@ class ApiStack(Stack):
             manifest=manifest,
         )
 
-        print(f"\n✅ Stack {config.stack_name} ready\n")
+        print(f"\nΓ£à Stack {config.stack_name} ready\n")

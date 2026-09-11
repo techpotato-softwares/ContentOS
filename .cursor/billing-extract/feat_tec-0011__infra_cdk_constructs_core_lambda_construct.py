@@ -1,4 +1,4 @@
-"""Python Lambda functions from app-manifest.json."""
+﻿"""Python Lambda functions from app-manifest.json."""
 from __future__ import annotations
 
 import json
@@ -26,10 +26,10 @@ def _load_local_env_vars() -> dict[str, str]:
             or next(iter(env_config.values()), {})
         )
         if isinstance(env_vars, dict):
-            print("   📋 Loaded local env vars from env.local.json")
+            print("   ≡ƒôï Loaded local env vars from env.local.json")
             return {str(k): str(v) for k, v in env_vars.items()}
     except Exception as exc:  # noqa: BLE001
-        print(f"   ⚠️  Failed to parse env.local.json: {exc}")
+        print(f"   ΓÜá∩╕Å  Failed to parse env.local.json: {exc}")
     return {}
 
 
@@ -63,7 +63,7 @@ class LambdaConstruct(Construct):
         self._db_host = db_host or config.database.host
 
         if db_host:
-            print(f"   📡 Using database host from RDS: {db_host}")
+            print(f"   ≡ƒôí Using database host from RDS: {db_host}")
 
         for name, lambda_cfg in manifest.lambdas.items():
             self.functions[name] = self._create_lambda(
@@ -71,7 +71,7 @@ class LambdaConstruct(Construct):
             )
 
         if not self.functions:
-            print("   No lambdas in manifest — check api/app-manifest.json")
+            print("   No lambdas in manifest ΓÇö check api/app-manifest.json")
 
     def _create_lambda(
         self,
@@ -90,7 +90,6 @@ class LambdaConstruct(Construct):
             "DB_SECRET_ID": config.db_secret_id,
             "JWT_SECRET_ID": config.jwt.secret_id,
             "STRIPE_SECRET_ID": config.stripe.secret_id,
-            "RAZORPAY_SECRET_ID": config.razorpay.secret_id,
             "JWT_EXPIRES_IN": config.jwt.expires_in,
             "JWT_REFRESH_EXPIRES_IN": config.jwt.refresh_expires_in,
             "LOG_LEVEL": "INFO" if config.environment == "prod" else "DEBUG",
@@ -105,14 +104,6 @@ class LambdaConstruct(Construct):
             "GEMINI_MODEL": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             "LINKEDIN_REDIRECT_URI": os.environ.get("LINKEDIN_REDIRECT_URI", ""),
             "LINKEDIN_FRONTEND_REDIRECT": os.environ.get("LINKEDIN_FRONTEND_REDIRECT", ""),
-            "FRONTEND_URL": os.environ.get("FRONTEND_URL", ""),
-            "SES_ENABLED": os.environ.get("SES_ENABLED", "false"),
-            "SES_FROM_EMAIL": os.environ.get(
-                "SES_FROM_EMAIL", os.environ.get("FROM_EMAIL", "")
-            ),
-            "FROM_EMAIL": os.environ.get(
-                "FROM_EMAIL", os.environ.get("SES_FROM_EMAIL", "")
-            ),
         }
         if config.environment == "dev":
             environment.update(_load_local_env_vars())

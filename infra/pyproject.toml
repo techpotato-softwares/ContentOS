@@ -1,0 +1,8 @@
+# Pyrefly config for infra (AWS CDK).
+# Use the infra virtualenv so aws_cdk / constructs resolve.
+[tool.pyrefly]
+project-includes = ["**/*.py"]
+project-excludes = [".venv/**", "cdk.out/**", "**/__pycache__/**"]
+search-path = ["."]
+python-interpreter-path = ".venv/Scripts/python.exe"
+disable-search-path-heuristics = true

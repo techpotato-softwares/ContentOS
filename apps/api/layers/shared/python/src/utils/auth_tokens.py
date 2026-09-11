@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from sqlmodel import select
@@ -25,6 +25,10 @@ _TTL_MINUTES = {
 # Max create-token requests per request_key (hashed email) per window
 _RATE_LIMIT = int(os.environ.get("AUTH_TOKEN_RATE_LIMIT", "5"))
 _RATE_WINDOW_MINUTES = int(os.environ.get("AUTH_TOKEN_RATE_WINDOW_MINUTES", "60"))
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def hash_token(raw: str) -> str:
@@ -54,7 +58,9 @@ def ensure_auth_schema(session) -> None:
     from database.models import SQLModel  # noqa: F401 — AuthToken registered on models import
 
     try:
-        AuthToken.__table__.create(bind=get_engine(), checkfirst=True)
+        table = getattr(AuthToken, "__table__", None)
+        if table is not None:
+            table.create(bind=get_engine(), checkfirst=True)
     except Exception:
         pass
     try:
@@ -77,7 +83,7 @@ def ensure_auth_schema(session) -> None:
 
 
 def assert_rate_limit(session, *, purpose: str, request_key: str) -> None:
-    since = datetime.utcnow() - timedelta(minutes=_RATE_WINDOW_MINUTES)
+    since = _utcnow() - timedelta(minutes=_RATE_WINDOW_MINUTES)
     recent = session.exec(
         select(AuthToken).where(
             AuthToken.purpose == purpose,
@@ -108,7 +114,7 @@ def issue_token(
     assert_rate_limit(session, purpose=purpose, request_key=request_key)
 
     if invalidate_previous:
-        now = datetime.utcnow()
+        now = _utcnow()
         for row in session.exec(
             select(AuthToken).where(
                 AuthToken.user_id == user.user_id,
@@ -126,7 +132,7 @@ def issue_token(
         user_id=user.user_id,  # type: ignore[arg-type]
         purpose=purpose,
         token_hash=hash_token(raw),
-        expires_at=datetime.utcnow() + timedelta(minutes=ttl),
+        expires_at=_utcnow() + timedelta(minutes=ttl),
         request_key=request_key,
     )
     session.add(row)
@@ -135,10 +141,11 @@ def issue_token(
 
 
 def consume_token(session, *, raw_token: str, purpose: Purpose) -> tuple[AuthToken, User]:
-    if not raw_token or not str(raw_token).strip():
+    token = (raw_token or "").strip()
+    if not token:
         raise ValidationError("Token is required")
     ensure_auth_schema(session)
-    digest = hash_token(str(raw_token).strip())
+    digest = hash_token(token)
     row = session.exec(
         select(AuthToken).where(
             AuthToken.token_hash == digest,
@@ -149,12 +156,12 @@ def consume_token(session, *, raw_token: str, purpose: Purpose) -> tuple[AuthTok
         raise AppError("Invalid or expired token", 400, "INVALID_TOKEN")
     if row.used_at is not None:
         raise AppError("This link has already been used", 400, "TOKEN_USED")
-    if row.expires_at < datetime.utcnow():
+    if row.expires_at < _utcnow():
         raise AppError("This link has expired", 400, "TOKEN_EXPIRED")
     user = session.get(User, row.user_id)
     if not user or not user.is_active:
         raise AppError("Invalid or expired token", 400, "INVALID_TOKEN")
-    row.used_at = datetime.utcnow()
+    row.used_at = _utcnow()
     session.add(row)
     session.flush()
     return row, user
