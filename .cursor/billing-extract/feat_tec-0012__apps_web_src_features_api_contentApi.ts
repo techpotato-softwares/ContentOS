@@ -1,4 +1,4 @@
-import { createApi } from "@reduxjs/toolkit/query/react"
+﻿import { createApi } from "@reduxjs/toolkit/query/react"
 import { baseQueryWithReauth, unwrapData } from "@/shared/lib/apiBase"
 import type { TenantTrainingSchema } from "@/shared/types/training"
 
@@ -22,46 +22,6 @@ export type TenantRow = {
   accentColor?: string
 }
 
-export type TenantInviteRow = {
-  inviteId: number
-  email: string
-  role: string
-  status: string
-  expiresAt?: string | null
-  invitedBy?: number | null
-  tenantId?: number
-  tenantName?: string | null
-  createdAt?: string | null
-  acceptedAt?: string | null
-}
-
-export type TenantInvitePreview = {
-  email: string
-  role: string
-  expiresAt?: string | null
-  tenantName?: string | null
-  status: string
-}
-
-export type TenantInviteAcceptResult = {
-  accepted: boolean
-  registered?: boolean
-  tenantId?: number
-  role?: string
-  accessToken: string
-  refreshToken: string
-  user: {
-    userId: number
-    username: string
-    email?: string | null
-    roleName?: string | null
-    tenantId?: number | null
-    permissions?: string[]
-    modulesEnabled?: string[]
-    emailVerified?: boolean
-  }
-}
-
 export type AiSettingsPayload = {
   aiBillingMode: "platform" | "byok" | string
   planTier: string
@@ -80,39 +40,8 @@ export type AiSettingsPayload = {
     id: string
     label: string
     monthlyUsd: number
-    monthlyInr?: number
     quota: number
     byokAllowed: boolean
-    display?: { usd: string; inr: string }
-  }>
-}
-
-export type BillingSummary = {
-  planTier: string
-  planLabel: string
-  monthlyUsd: number
-  monthlyInr: number
-  aiBillingMode: string
-  byok: boolean
-  byokAllowed: boolean
-  billingStatus: string
-  billingGateway: "stripe" | "razorpay" | null
-  preferredCurrency: "usd" | "inr"
-  preferredGateway: "stripe" | "razorpay"
-  hasStripeCustomer: boolean
-  hasStripeSubscription: boolean
-  hasRazorpayCustomer: boolean
-  hasRazorpaySubscription: boolean
-  hasSubscription: boolean
-  quota: { used: number; limit: number; month?: string | null }
-  plans: Array<{
-    id: string
-    label: string
-    monthlyUsd: number
-    monthlyInr: number
-    quota: number
-    byokAllowed: boolean
-    display?: { usd: string; inr: string }
   }>
 }
 
@@ -327,32 +256,37 @@ export type AnalyticsInsights = {
 export const contentApi = createApi({
   reducerPath: "contentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: [
-    "Theme",
-    "Training",
-    "Tenants",
-    "TenantInvites",
-    "Posts",
-    "LinkedIn",
-    "Batch",
-    "Sessions",
-    "Insights",
-    "Billing",
-    "AiSettings",
-  ],
+  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights", "Billing", "AiSettings"],
   endpoints: (build) => ({
     getTheme: build.query<ThemePayload, void>({
       query: () => "/api/tenants/me/theme",
       transformResponse: (r: unknown) => unwrapData<ThemePayload>(r),
       providesTags: ["Theme"],
     }),
-    getBillingSummary: build.query<BillingSummary, { currency?: "usd" | "inr" } | void>({
-      query: (args) => {
-        const currency = args && "currency" in args ? args.currency : undefined
-        const qs = currency ? `?currency=${currency}` : ""
-        return `/api/billing/summary${qs}`
+    getBillingSummary: build.query<
+      {
+        planTier: string
+        planLabel: string
+        monthlyUsd: number
+        aiBillingMode: string
+        byok: boolean
+        byokAllowed: boolean
+        billingStatus: string
+        hasStripeCustomer: boolean
+        hasSubscription: boolean
+        quota: { used: number; limit: number; month?: string | null }
+        plans: Array<{
+          id: string
+          label: string
+          monthlyUsd: number
+          quota: number
+          byokAllowed: boolean
+        }>
       },
-      transformResponse: (r: unknown) => unwrapData<BillingSummary>(r),
+      void
+    >({
+      query: () => "/api/billing/summary",
+      transformResponse: (r: unknown) => unwrapData(r),
       providesTags: ["Billing"],
     }),
     createCheckoutSession: build.mutation<
@@ -365,54 +299,6 @@ export const contentApi = createApi({
     createPortalSession: build.mutation<{ url: string }, void>({
       query: () => ({ url: "/api/billing/portal-session", method: "POST", body: {} }),
       transformResponse: (r: unknown) => unwrapData(r),
-    }),
-    createRazorpaySubscription: build.mutation<
-      {
-        url: string
-        subscriptionId: string
-        gateway: string
-        currency: string
-        amountInr: string
-      },
-      { planTier: string }
-    >({
-      query: (body) => ({
-        url: "/api/billing/razorpay/subscription",
-        method: "POST",
-        body,
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Billing"],
-    }),
-    createRazorpayPaymentLink: build.mutation<
-      {
-        url: string
-        paymentLinkId: string
-        gateway: string
-        currency: string
-        amountInr: string
-      },
-      { planTier: string; successUrl?: string }
-    >({
-      query: (body) => ({
-        url: "/api/billing/razorpay/payment-link",
-        method: "POST",
-        body,
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Billing"],
-    }),
-    cancelRazorpaySubscription: build.mutation<
-      { canceled: boolean; subscriptionId: string },
-      { cancelAtCycleEnd?: boolean } | void
-    >({
-      query: (body) => ({
-        url: "/api/billing/razorpay/cancel",
-        method: "POST",
-        body: body || {},
-      }),
-      transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Billing"],
     }),
     getAiSettings: build.query<AiSettingsPayload, void>({
       query: () => "/api/tenants/me/ai-settings",
@@ -442,44 +328,6 @@ export const contentApi = createApi({
       query: (body) => ({ url: "/api/admin/tenants", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData<TenantRow>(r),
       invalidatesTags: ["Tenants"],
-    }),
-    listTenantInvites: build.query<{ invites: TenantInviteRow[] }, void>({
-      query: () => "/api/tenants/invites",
-      transformResponse: (r: unknown) => unwrapData<{ invites: TenantInviteRow[] }>(r),
-      providesTags: ["TenantInvites"],
-    }),
-    createTenantInvite: build.mutation<
-      { invite: TenantInviteRow; emailSent: boolean; emailReason?: string },
-      { email: string; role?: "tenant_member" | "tenant_admin" }
-    >({
-      query: (body) => ({ url: "/api/tenants/invites", method: "POST", body }),
-      transformResponse: (r: unknown) =>
-        unwrapData<{ invite: TenantInviteRow; emailSent: boolean; emailReason?: string }>(r),
-      invalidatesTags: ["TenantInvites"],
-    }),
-    revokeTenantInvite: build.mutation<
-      { invite: TenantInviteRow; revoked: boolean },
-      number
-    >({
-      query: (inviteId) => ({
-        url: `/api/tenants/invites/${inviteId}`,
-        method: "DELETE",
-      }),
-      transformResponse: (r: unknown) =>
-        unwrapData<{ invite: TenantInviteRow; revoked: boolean }>(r),
-      invalidatesTags: ["TenantInvites"],
-    }),
-    previewTenantInvite: build.query<TenantInvitePreview, string>({
-      query: (token) => `/api/tenants/invites/preview?token=${encodeURIComponent(token)}`,
-      transformResponse: (r: unknown) => unwrapData<TenantInvitePreview>(r),
-    }),
-    acceptTenantInvite: build.mutation<
-      TenantInviteAcceptResult,
-      { token: string; username?: string; email?: string; password?: string }
-    >({
-      query: (body) => ({ url: "/api/tenants/invites/accept", method: "POST", body }),
-      transformResponse: (r: unknown) => unwrapData<TenantInviteAcceptResult>(r),
-      invalidatesTags: ["TenantInvites"],
     }),
     getTraining: build.query<TenantTrainingSchema, number | void>({
       query: (tenantId) =>
@@ -801,18 +649,10 @@ export const {
   useGetBillingSummaryQuery,
   useCreateCheckoutSessionMutation,
   useCreatePortalSessionMutation,
-  useCreateRazorpaySubscriptionMutation,
-  useCreateRazorpayPaymentLinkMutation,
-  useCancelRazorpaySubscriptionMutation,
   useGetAiSettingsQuery,
   usePutAiSettingsMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
-  useListTenantInvitesQuery,
-  useCreateTenantInviteMutation,
-  useRevokeTenantInviteMutation,
-  usePreviewTenantInviteQuery,
-  useAcceptTenantInviteMutation,
   useGetTrainingQuery,
   usePutTrainingMutation,
   useUploadLogoMutation,

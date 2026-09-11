@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 import time
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 import jwt
 from utils.jwt_secrets import get_jwt_secrets
 
@@ -41,7 +41,15 @@ def generate_access_token(payload: JWTPayload) -> str:
 
 def verify_access_token(token: str) -> JWTPayload:
     secrets = get_jwt_secrets()
-    return jwt.decode(token, secrets.JWT_SECRET, algorithms=["HS256"], audience="arcforge-client", issuer="arcforge-api", options={"verify_aud": False, "verify_iss": False})
+    decoded = jwt.decode(
+        token,
+        secrets.JWT_SECRET,
+        algorithms=["HS256"],
+        audience="arcforge-client",
+        issuer="arcforge-api",
+        options={"verify_aud": False, "verify_iss": False},
+    )
+    return cast(JWTPayload, decoded)
 
 def generate_refresh_token(payload: JWTPayload) -> str:
     secrets = get_jwt_secrets()
@@ -54,7 +62,13 @@ def generate_refresh_token(payload: JWTPayload) -> str:
 
 def verify_refresh_token(token: str) -> JWTPayload:
     secrets = get_jwt_secrets()
-    return jwt.decode(token, secrets.JWT_REFRESH_SECRET, algorithms=["HS256"], options={"verify_aud": False, "verify_iss": False})
+    decoded = jwt.decode(
+        token,
+        secrets.JWT_REFRESH_SECRET,
+        algorithms=["HS256"],
+        options={"verify_aud": False, "verify_iss": False},
+    )
+    return cast(JWTPayload, decoded)
 
 def generate_tokens(payload: JWTPayload) -> dict[str, Any]:
     access = generate_access_token(payload)

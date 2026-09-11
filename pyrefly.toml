@@ -1,0 +1,25 @@
+# Workspace-level Pyrefly config (used when configPath is unset).
+# Prefer apps/api/pyrefly.toml for API files — see .vscode/settings.json.
+project-includes = [
+  "apps/api/**/*.py",
+  "infra/**/*.py",
+]
+project-excludes = [
+  "**/node_modules/**",
+  "**/.venv/**",
+  "**/cdk.out/**",
+  "**/__pycache__/**",
+  "**/bundled/**",
+  "apps/web/**",
+  "apps/marketing/**",
+  "**/contentos.egg-info/**",
+]
+search-path = [
+  "apps/api/layers/shared/python/src",
+  "apps/api",
+  "apps/api/modules",
+  "infra",
+]
+python-interpreter-path = "apps/api/.venv/Scripts/python.exe"
+disable-search-path-heuristics = true
+enable-fallback-search-path = false

@@ -1,0 +1,19 @@
+# Pyrefly config for the API package.
+# Shared imports (middleware, database, utils) live in layers/shared/python/src —
+# NOT in apps/api/src. Disable src/ heuristics so the IDE matches the CLI.
+project-includes = ["**/*.py"]
+project-excludes = [
+  ".venv/**",
+  "**/__pycache__/**",
+  "**/.pytest_cache/**",
+  "**/bundled/**",
+  "contentos.egg-info/**",
+]
+search-path = [
+  "layers/shared/python/src",
+  ".",
+  "modules",
+]
+python-interpreter-path = ".venv/Scripts/python.exe"
+disable-search-path-heuristics = true
+enable-fallback-search-path = false

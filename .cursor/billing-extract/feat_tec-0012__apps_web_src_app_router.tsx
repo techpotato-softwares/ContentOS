@@ -1,15 +1,12 @@
-import { Navigate, Route, Routes } from "react-router-dom"
+﻿import { Navigate, Route, Routes } from "react-router-dom"
 import { useAppSelector } from "@/app/hooks"
 import { AppShell } from "@/shared/layout/AppShell"
 import { InstallPrompt } from "@/shared/pwa/InstallPrompt"
 import { LoginPage } from "@/features/auth/LoginPage"
-import { GoogleOAuthCallbackPage } from "@/features/auth/GoogleOAuthCallbackPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { AgentPage } from "@/features/agent/AgentPage"
 import { ReviewPage } from "@/features/posts/ReviewPage"
 import { TrainingPage } from "@/features/training/TrainingPage"
-import { TeamPage } from "@/features/settings/TeamPage"
-import { AcceptInvitePage } from "@/features/settings/AcceptInvitePage"
 import { BillingPage } from "@/features/billing/BillingPage"
 import { AiSettingsPage } from "@/features/settings/AiSettingsPage"
 import { AdminTenantsPage } from "@/features/tenants/AdminTenantsPage"
@@ -29,7 +26,6 @@ export function AppRouter() {
       <InstallPrompt />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/login/oauth/callback" element={<GoogleOAuthCallbackPage />} />
         <Route
           path="/"
           element={
@@ -45,7 +41,6 @@ export function AppRouter() {
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="review" element={<ReviewPage />} />
           <Route path="settings/training" element={<TrainingPage />} />
-          <Route path="settings/team" element={<TeamPage />} />
           <Route path="settings/ai" element={<AiSettingsPage />} />
           <Route path="settings/billing" element={<BillingPage />} />
           <Route path="connections/linkedin" element={<LinkedInPage />} />

@@ -14,6 +14,8 @@ import {
   BarChart3,
   MoreHorizontal,
   Users,
+  Cpu,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react"
 import { useAppDispatch, useAppSelector } from "@/app/hooks"
@@ -39,6 +41,8 @@ const links: NavItem[] = [
   { to: "/review", label: "Review", icon: ClipboardCheck },
   { to: "/connections/linkedin", label: "LinkedIn", icon: Share2 },
   { to: "/settings/training", label: "Training", icon: Palette },
+  { to: "/settings/ai", label: "AI", icon: Cpu },
+  { to: "/settings/billing", label: "Billing", icon: CreditCard },
   { to: "/settings/team", label: "Team", icon: Users },
   { to: "/admin/tenants", label: "Tenants", icon: Building2, admin: true },
 ]

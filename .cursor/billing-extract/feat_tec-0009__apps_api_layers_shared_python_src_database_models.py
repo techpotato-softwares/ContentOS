@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 from sqlmodel import SQLModel, Field, Column
@@ -24,30 +24,20 @@ class Tenant(SQLModel, table=True):
     primary_color: Optional[str] = None
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
-    # Hybrid AI billing + multi-gateway subscriptions
+    # Hybrid AI billing (FEATURE-HYBRID-AI-BILLING.md foundation)
+    plan: str = Field(default="starter", index=True)
     ai_billing_mode: str = Field(default="platform")  # platform | byok
-    plan_tier: str = Field(default="starter")  # starter | growth | scale | agency
-    ai_secret_arn: Optional[str] = None
-    ai_posts_quota_monthly: int = Field(default=40)
-    ai_posts_used_month: int = Field(default=0)
-    ai_usage_month: Optional[str] = None  # YYYY-MM
-    billing_gateway: Optional[str] = Field(default=None)  # stripe | razorpay | None
+    ai_secret_arn: Optional[str] = None  # BYOK Secrets Manager name/ARN ΓÇö never return in API
+    ai_posts_quota_monthly: int = 40
+    ai_posts_used_month: int = 0
+    ai_usage_month: Optional[str] = None  # YYYY-MM period key for quota reset
     stripe_customer_id: Optional[str] = Field(default=None, index=True)
-    stripe_subscription_id: Optional[str] = Field(default=None, index=True)
     razorpay_customer_id: Optional[str] = Field(default=None, index=True)
-    razorpay_subscription_id: Optional[str] = Field(default=None, index=True)
-    billing_status: str = Field(default="none")  # none|trialing|active|past_due|canceled|unpaid
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class User(SQLModel, table=True):
-    """App user. Tenant membership is ``tenant_id`` + ``role_id``.
-
-    ``email_verified_at`` gates publishing. ``token_version`` invalidates JWTs
-    after password reset (must match claim ``tv``).
-    """
-
     __tablename__ = "users"
     user_id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="tenants.tenant_id", index=True)
@@ -56,24 +46,8 @@ class User(SQLModel, table=True):
     password: str
     role_id: Optional[int] = Field(default=None, foreign_key="roles.role_id")
     is_active: bool = True
-    email_verified_at: Optional[datetime] = Field(default=None, index=True)
-    token_version: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class AuthToken(SQLModel, table=True):
-    """One-time auth tokens (email verify / password reset). Store only ``token_hash``."""
-
-    __tablename__ = "auth_tokens"
-    token_id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="users.user_id", index=True)
-    purpose: str = Field(index=True)  # email_verify | password_reset
-    token_hash: str = Field(unique=True, index=True)
-    expires_at: datetime = Field(index=True)
-    used_at: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    request_key: Optional[str] = Field(default=None, index=True)  # hashed email for rate limits
 
 
 class Role(SQLModel, table=True):
@@ -216,57 +190,17 @@ class AuditLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class TenantInvite(SQLModel, table=True):
-    """Team invite. ``token`` stores a SHA-256 hash of the raw secret — never the raw value."""
-
-    __tablename__ = "tenant_invites"
-    __table_args__ = (UniqueConstraint("token", name="uq_tenant_invites_token"),)
-    invite_id: Optional[int] = Field(default=None, primary_key=True)
-    tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
-    email: str = Field(index=True)
-    role: str = Field(default="tenant_member")  # tenant_member | tenant_admin
-    token: str = Field(index=True)  # sha256 hex of raw invite token
-    expires_at: datetime
-    invited_by: Optional[int] = Field(default=None, foreign_key="users.user_id")
-    status: str = Field(default="pending", index=True)  # pending|accepted|revoked|expired
-    accepted_by_user_id: Optional[int] = None
-    accepted_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
 class AiUsageEvent(SQLModel, table=True):
-    """Metered AI usage (platform quota vs BYOK analytics)."""
+    """Tenant-scoped AI metering events (platform quota + BYOK analytics)."""
 
     __tablename__ = "ai_usage_events"
     event_id: Optional[int] = Field(default=None, primary_key=True)
-    tenant_id: int = Field(index=True)
-    user_id: Optional[int] = None
-    action: str
+    tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
+    kind: str = Field(index=True)  # generate_batch | chat | score | ...
     units: int = 1
-    billing_mode: str = Field(default="platform")  # platform | byok
-    provider: Optional[str] = None
+    model: Optional[str] = None
+    meta_json: str = Field(default="{}", sa_column=Column(Text, default="{}"))
     created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class StripeWebhookEvent(SQLModel, table=True):
-    """Idempotency ledger for Stripe webhook event ids."""
-
-    __tablename__ = "stripe_webhook_events"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    event_id: str = Field(unique=True, index=True)
-    event_type: str
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class RazorpayWebhookEvent(SQLModel, table=True):
-    """Idempotency ledger for Razorpay webhook event ids."""
-
-    __tablename__ = "razorpay_webhook_events"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    event_id: str = Field(unique=True, index=True)
-    event_type: str
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # Keep demo table for kit compatibility (disabled in ContentOS modules by default)

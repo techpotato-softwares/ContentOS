@@ -1,4 +1,4 @@
-"""Environment configuration for ContentOS Python CDK."""
+﻿"""Environment configuration for ContentOS Python CDK."""
 from __future__ import annotations
 
 import os
@@ -43,11 +43,6 @@ class StripeConfig:
 
 
 @dataclass
-class RazorpayConfig:
-    secret_id: str
-
-
-@dataclass
 class EnvironmentConfig:
     environment: Environment
     stack_name: str
@@ -63,7 +58,6 @@ class EnvironmentConfig:
     database: DatabaseConfig
     jwt: JwtConfig
     stripe: StripeConfig
-    razorpay: RazorpayConfig
     custom_domain: str | None = None
     cloudfront_certificate_arn: str | None = None
 
@@ -118,7 +112,6 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             refresh_expires_in="1d",
         ),
         stripe=StripeConfig(secret_id=f"/{APP}/dev/stripe"),
-        razorpay=RazorpayConfig(secret_id=f"/{APP}/dev/razorpay"),
     ),
     "qa": EnvironmentConfig(
         environment="qa",
@@ -145,7 +138,6 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             refresh_expires_in="7d",
         ),
         stripe=StripeConfig(secret_id=f"/{APP}/qa/stripe"),
-        razorpay=RazorpayConfig(secret_id=f"/{APP}/qa/razorpay"),
     ),
     "prod": EnvironmentConfig(
         environment="prod",
@@ -171,7 +163,6 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             refresh_expires_in="30d",
         ),
         stripe=StripeConfig(secret_id=f"/{APP}/prod/stripe"),
-        razorpay=RazorpayConfig(secret_id=f"/{APP}/prod/razorpay"),
         custom_domain=os.environ.get("CUSTOM_DOMAIN") or None,
         cloudfront_certificate_arn=os.environ.get("CLOUDFRONT_CERTIFICATE_ARN")
         or None,
