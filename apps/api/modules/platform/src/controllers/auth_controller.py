@@ -3,10 +3,9 @@ from __future__ import annotations
 import json
 import re
 import secrets
-from datetime import datetime, timezone
-from typing import Any, cast
+from datetime import datetime
 
-import passlib.hash as _passlib_hash
+from passlib.hash import bcrypt
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
@@ -18,7 +17,7 @@ from decorators import Controller, Post, Get
 from decorators.auth_decorators import ApiPublic, RequirePermission
 from database import get_session
 from database.models import User, Role, RolePermission, Permission, Tenant
-from utils.webtoken import JWTPayload, generate_tokens
+from utils.webtoken import generate_tokens
 from utils.auth_tokens import (
     PURPOSE_EMAIL_VERIFY,
     PURPOSE_PASSWORD_RESET,
