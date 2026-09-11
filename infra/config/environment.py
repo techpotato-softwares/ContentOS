@@ -43,6 +43,7 @@ class EnvironmentConfig:
     stack_name: str
     description: str
     db_secret_id: str
+    ai_secret_id: str
     log_retention_days: int
     lambda_memory_size: int
     lambda_timeout: int
@@ -86,6 +87,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
         stack_name="ApiStack-dev",
         description="ContentOS API - Development (Supabase)",
         db_secret_id=f"/{APP}/dev/db",
+        ai_secret_id=f"/{APP}/dev/ai",
         log_retention_days=7,
         lambda_memory_size=512,
         lambda_timeout=60,
@@ -111,6 +113,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
         stack_name="api-stack-contentos-qa",
         description="ContentOS API - QA (shared Supabase)",
         db_secret_id=f"/{APP}/qa/db",
+        ai_secret_id=f"/{APP}/qa/ai",
         log_retention_days=14,
         lambda_memory_size=512,
         lambda_timeout=60,
@@ -136,6 +139,7 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
         stack_name="ApiStack-prod",
         description="ContentOS API - Production (RDS)",
         db_secret_id=f"/{APP}/prod/db",
+        ai_secret_id=f"/{APP}/prod/ai",
         log_retention_days=90,
         lambda_memory_size=1024,
         lambda_timeout=60,

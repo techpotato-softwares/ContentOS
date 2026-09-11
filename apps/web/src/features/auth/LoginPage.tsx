@@ -120,7 +120,7 @@ export function LoginPage() {
         <div className="auth-grid absolute inset-0" />
       </div>
 
-      <div className="relative z-[1] mx-auto grid min-h-dvh max-w-6xl lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="relative z-1 mx-auto grid min-h-dvh max-w-6xl lg:grid-cols-[1.05fr_0.95fr]">
         {/* Brand stage */}
         <motion.aside
           initial={{ opacity: 0, y: 12 }}
@@ -207,7 +207,7 @@ export function LoginPage() {
               {steps.map((step) => (
                 <div
                   key={step.n}
-                  className="rounded-xl border border-white/8 bg-white/[0.03] px-2 py-3 text-center"
+                  className="rounded-xl border border-white/8 bg-white/3 px-2 py-3 text-center"
                 >
                   <p className="font-display text-lg text-[#3ee9c9]">{step.n}</p>
                   <p className="mt-1 text-[11px] font-medium text-[#c5dbd2]">{step.label}</p>
@@ -222,7 +222,7 @@ export function LoginPage() {
 
         {/* Form stage */}
         <div className="flex items-center justify-center px-4 pb-10 pt-2 sm:px-8 lg:px-10 lg:py-12">
-          <div className="auth-form-stage relative w-full max-w-[420px]">
+          <div className="auth-form-stage relative w-full max-w-105">
             <div className="auth-form-rounds" aria-hidden>
               <span className="auth-form-round auth-form-round-a" />
               <span className="auth-form-round auth-form-round-b" />
@@ -234,7 +234,7 @@ export function LoginPage() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-              className="auth-panel relative z-[1] w-full space-y-5 rounded-[1.6rem] p-5 sm:p-8"
+              className="auth-panel relative z-1 w-full space-y-5 rounded-[1.6rem] p-5 sm:p-8"
             >
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#3ee9c9]">
@@ -272,7 +272,7 @@ export function LoginPage() {
                         transition={{ type: "spring", stiffness: 420, damping: 34 }}
                       />
                     )}
-                    <span className="relative z-[1]">
+                    <span className="relative z-1">
                       {m === "login" ? "Login" : "Start free"}
                     </span>
                   </button>

@@ -53,9 +53,9 @@ Annual: ~2 months free (billing integration later — out of scope for v1).
 
 | Area | Today | Needed |
 |------|--------|--------|
-| Keys | `OPENAI_API_KEY` / `GEMINI_API_KEY` from **process env only** (`providers.py`, `image_providers.py`) | Resolve per-tenant: platform SM **or** tenant BYOK |
+| Keys | Platform keys from SM (`AI_SECRET_ID`) in QA/Prod; `.env` when `IS_LOCAL=true` | Per-tenant BYOK secret (next WP) |
 | Tenant model | No billing/AI fields (`models.py` `Tenant`) | Mode, plan, secret ARN, quota counters |
-| CDK | Models/flags on Lambda; **keys not wired** for QA/Prod | Platform AI secret construct + `AI_SECRET_ID` |
+| CDK | `AiSecretsConstruct` + `AI_SECRET_ID` on agent/ai | Tenant BYOK secret create/update |
 | Settings API | Training/theme only | `GET/PUT /api/tenants/me/ai-settings` |
 | Web UI | Training under Settings | New **AI & billing** settings page |
 | Metering | None | Quota check + usage events on generate |
@@ -174,6 +174,30 @@ Prefer:
 2. Wire `AI_SECRET_ID` into Lambda environment in `lambda_construct.py`
 3. Document: after QA deploy, paste real keys into Secrets Manager (do not commit `.env` keys)
 4. Local: keep using `apps/api/.env`
+
+#### WP1 status (implemented)
+
+| Item | Detail |
+|------|--------|
+| Construct | `infra/cdk_constructs/security/ai_secrets_construct.py` |
+| Secret name | `/{APP_NAME}/{env}/ai` (e.g. `/contentos/qa/ai`) |
+| JSON keys | `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_PROVIDER` (empty placeholders OK on create) |
+| Lambda env | **Only** `AI_SECRET_ID` on **agent** / **ai** Lambdas (secret name/ARN id — never key material) |
+| IAM | `AiSecretsConstruct.grant_read` on agent/ai only; blanket `/{APP}/*` removed in favor of db + jwt + `/tenants/*` |
+| Runtime helper | `apps/api/layers/shared/python/src/utils/ai_secrets.py` → `get_platform_ai_secrets()` |
+| Resolver | `resolve_ai_credentials()` in `providers.py` |
+
+#### Operator runbook — first QA deploy
+
+1. Deploy the API stack to QA (`npm run deploy:qa` / CI). CDK creates `/contentos/qa/ai` with empty `OPENAI_API_KEY` / `GEMINI_API_KEY` and `AI_PROVIDER=openai`.
+2. In **AWS Secrets Manager** → open `/contentos/qa/ai` → **Retrieve secret value** → **Edit**:
+   - Paste real `OPENAI_API_KEY` and/or `GEMINI_API_KEY`
+   - Set `AI_PROVIDER` to `openai` or `gemini` (models stay on Lambda env: `OPENAI_MODEL`, etc.)
+3. Save. No re-deploy required for key rotation (GenerateSecretString only applies on create).
+4. Confirm agent Lambda environment has `AI_SECRET_ID=/contentos/qa/ai` and does **not** list `OPENAI_API_KEY` / `GEMINI_API_KEY`.
+5. **Never commit** keys to Git, `env.local.json`, or CDK. Local continues to use `apps/api/.env` when `IS_LOCAL=true`.
+
+Empty placeholders on first deploy are intentional — AI calls will return structured `AI_CONFIG` until keys are populated.
 
 ### WP2 — Shared AI credential + billing helpers
 
