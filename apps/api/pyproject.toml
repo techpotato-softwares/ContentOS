@@ -40,3 +40,9 @@ include = ["arcforge_shared*", "config*", "database*", "decorators*", "core*", "
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["layers/shared/python/src", "."]
+
+# Match runtime/pytest import roots. Without this, Pyrefly heuristics treat
+# apps/api/src as the only import root and miss shared layer + modules packages.
+[tool.pyrefly]
+search-path = ["layers/shared/python/src", "."]
+disable-search-path-heuristics = true

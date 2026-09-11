@@ -5,12 +5,15 @@ import json
 import os
 import re
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 import httpx
 from utils.logger import logger
 from utils.tenant import tenant_s3_prefix
 from utils.s3 import get_s3_config
+from utils.ai_secrets import get_platform_ai_secrets
 from middleware.error_handler import AppError
+from config import get_app_config
 
 
 SYSTEM_STANCE = """You are ContentOS, a LinkedIn content assistant for a company tenant.
@@ -369,10 +372,10 @@ class StubProvider(AIProvider):
         context_pack: str,
         best_times: list[str] | None = None,
     ) -> dict:
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         slots = best_times or ["Tue 10:00", "Thu 09:00", "Wed 11:30"]
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         # Next Tue/Thu/Wed from tomorrow
         suggestions = []
         labels = ["A", "B", "C"]
@@ -396,13 +399,19 @@ class StubProvider(AIProvider):
 
 
 class OpenAIProvider(AIProvider):
-    def __init__(self):
-        self.api_key = (os.environ.get("OPENAI_API_KEY") or "").strip().strip('"').strip("'")
+    def __init__(self, api_key: str | None = None):
+        self.api_key = (
+            (api_key if api_key is not None else os.environ.get("OPENAI_API_KEY") or "")
+            .strip()
+            .strip('"')
+            .strip("'")
+        )
         self.model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         self.image_model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
         if not self.api_key:
             raise AppError(
-                "OPENAI_API_KEY is missing. Set it in apps/api/.env and restart the API.",
+                "OPENAI_API_KEY is missing. Set it in apps/api/.env (local) "
+                "or populate the platform AI secret in Secrets Manager (QA/Prod).",
                 500,
                 "AI_CONFIG",
             )
@@ -803,14 +812,20 @@ POSTS JSON:
 class GeminiProvider(OpenAIProvider):
     """Google Gemini for text/planning. Images stay on OpenAI via image_providers."""
 
-    def __init__(self):
-        self.api_key = (os.environ.get("GEMINI_API_KEY") or "").strip().strip('"').strip("'")
+    def __init__(self, api_key: str | None = None):
+        self.api_key = (
+            (api_key if api_key is not None else os.environ.get("GEMINI_API_KEY") or "")
+            .strip()
+            .strip('"')
+            .strip("'")
+        )
         self.model = (os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash").strip()
         # Kept for OpenAIProvider.generate_image fallback if ever called
         self.image_model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
         if not self.api_key:
             raise AppError(
-                "GEMINI_API_KEY is missing. Set it in apps/api/.env and restart the API.",
+                "GEMINI_API_KEY is missing. Set it in apps/api/.env (local) "
+                "or populate the platform AI secret in Secrets Manager (QA/Prod).",
                 500,
                 "AI_CONFIG",
             )
@@ -978,7 +993,7 @@ class BedrockProvider(OpenAIProvider):
                 system=[{"text": system}],
                 messages=[{"role": "user", "content": [{"text": user}]}],
                 inferenceConfig={
-                    "temperature": float(temperature),
+                    "temperature": temperature,
                     "maxTokens": 8192,
                 },
             )
@@ -1029,14 +1044,14 @@ class BedrockProvider(OpenAIProvider):
 
 
 def datetime_utcnow_iso() -> str:
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _clamp_score(v, default: int = 70) -> int:
     try:
-        n = int(round(float(v)))
+        n = round(float(v))
     except Exception:
         n = default
     return max(0, min(100, n))
@@ -1065,14 +1080,14 @@ def _normalize_score(data: dict) -> dict:
 
 
 def _normalize_ab_schedule(data: dict, posts: list[dict]) -> dict:
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     suggestions = data.get("suggestions") or []
     if not isinstance(suggestions, list) or not suggestions:
         return StubProvider().ab_schedule_suggestions(posts=posts, context_pack="")
     post_ids = {p.get("postId") for p in posts}
     out = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     for i, s in enumerate(suggestions):
         if not isinstance(s, dict):
             continue
@@ -1195,10 +1210,16 @@ def _parse_json_object(text: str) -> dict:
 
 def list_text_providers() -> list[dict]:
     """Providers available for chat / plan / score (images stay separate)."""
-    openai_ok = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
-    gemini_ok = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+    try:
+        creds = resolve_ai_credentials(require_provider_key=False)
+        openai_ok = bool(creds.openai_api_key)
+        gemini_ok = bool(creds.gemini_api_key)
+        default = creds.provider
+    except AppError:
+        openai_ok = False
+        gemini_ok = False
+        default = (os.environ.get("AI_PROVIDER") or "openai").lower().strip()
     bedrock_ok = bedrock_configured()
-    default = (os.environ.get("AI_PROVIDER") or "openai").lower().strip()
     return [
         {
             "id": "openai",
@@ -1233,16 +1254,84 @@ def list_text_providers() -> list[dict]:
     ]
 
 
+@dataclass(frozen=True)
+class ResolvedAiCredentials:
+    openai_api_key: str
+    gemini_api_key: str
+    provider: str
+    source: str  # "env" | "secrets_manager"
+
+
+def resolve_ai_credentials(*, require_provider_key: bool = True) -> ResolvedAiCredentials:
+    """Resolve platform AI credentials for the current runtime.
+
+    - Local (`IS_LOCAL=true`): `apps/api/.env` / process environment only.
+    - QA/Prod: AWS Secrets Manager via `AI_SECRET_ID` exclusively.
+    Never logs secret values. Raises structured `AI_CONFIG` on failure.
+    """
+    cfg = get_app_config()
+    try:
+        secrets = get_platform_ai_secrets()
+    except RuntimeError as exc:
+        raise AppError(str(exc), 500, "AI_CONFIG") from None
+    except Exception:
+        raise AppError(
+            "Unable to resolve platform AI credentials",
+            500,
+            "AI_CONFIG",
+        ) from None
+
+    source = "env" if cfg.is_local else "secrets_manager"
+    provider = (secrets.AI_PROVIDER or "openai").lower().strip() or "openai"
+    resolved = ResolvedAiCredentials(
+        openai_api_key=secrets.OPENAI_API_KEY,
+        gemini_api_key=secrets.GEMINI_API_KEY,
+        provider=provider,
+        source=source,
+    )
+
+    logger.info(
+        "AI credentials resolved",
+        {
+            "source": source,
+            "provider": provider,
+            "openai_key_present": bool(resolved.openai_api_key),
+            "gemini_key_present": bool(resolved.gemini_api_key),
+        },
+    )
+
+    if not require_provider_key:
+        return resolved
+
+    if provider == "openai" and not resolved.openai_api_key:
+        raise AppError(
+            "OPENAI_API_KEY is missing for AI_PROVIDER=openai. "
+            "Local: set apps/api/.env. QA/Prod: populate Secrets Manager "
+            f"secret referenced by AI_SECRET_ID.",
+            500,
+            "AI_CONFIG",
+        )
+    if provider == "gemini" and not resolved.gemini_api_key:
+        raise AppError(
+            "GEMINI_API_KEY is missing for AI_PROVIDER=gemini. "
+            "Local: set apps/api/.env. QA/Prod: populate Secrets Manager "
+            f"secret referenced by AI_SECRET_ID.",
+            500,
+            "AI_CONFIG",
+        )
+    return resolved
+
+
 def get_provider(name: str | None = None) -> AIProvider:
-    resolved = (name or os.environ.get("AI_PROVIDER") or "openai").lower().strip()
-    openai_key = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
-    gemini_key = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+    creds = resolve_ai_credentials(require_provider_key=False)
+    resolved = (name or creds.provider or "openai").lower().strip()
     logger.info(
         "AI provider resolve",
         {
             "provider": resolved,
-            "openai_key_present": openai_key,
-            "gemini_key_present": gemini_key,
+            "source": creds.source,
+            "openai_key_present": bool(creds.openai_api_key),
+            "gemini_key_present": bool(creds.gemini_api_key),
             "bedrock_configured": bedrock_configured(),
         },
     )
@@ -1251,9 +1340,9 @@ def get_provider(name: str | None = None) -> AIProvider:
     if resolved == "bedrock":
         return BedrockProvider()
     if resolved == "gemini":
-        return GeminiProvider()
+        return GeminiProvider(api_key=creds.gemini_api_key)
     if resolved == "openai":
-        return OpenAIProvider()
+        return OpenAIProvider(api_key=creds.openai_api_key)
     raise AppError(
         f"Unknown AI_PROVIDER={resolved}. Use openai | gemini | bedrock | stub.",
         500,

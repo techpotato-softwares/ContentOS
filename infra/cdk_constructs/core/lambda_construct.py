@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import json
 import os
-from aws_cdk import CfnOutput, Duration
-from aws_cdk import aws_iam as iam
-from aws_cdk import aws_lambda as lambda_
-from aws_cdk import aws_logs as logs
-from constructs import Construct
+from aws_cdk import CfnOutput, Duration  # pyrefly: ignore[missing-import]
+from aws_cdk import aws_iam as iam  # pyrefly: ignore[missing-import]
+from aws_cdk import aws_lambda as lambda_  # pyrefly: ignore[missing-import]
+from aws_cdk import aws_logs as logs  # pyrefly: ignore[missing-import]
+from constructs import Construct  # pyrefly: ignore[missing-import]
 
 from config.environment import EnvironmentConfig
 from paths import API_ASSET_EXCLUDES, API_ROOT, ENV_LOCAL_JSON
@@ -15,6 +15,16 @@ from utils.manifest_reader import AppManifest
 
 
 def _load_local_env_vars() -> dict[str, str]:
+    """Load optional SAM/dev overrides. Never inject AI API keys into Lambda env."""
+    _blocked = frozenset(
+        {
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "JWT_SECRET",
+            "JWT_REFRESH_SECRET",
+            "DB_PASSWORD",
+        }
+    )
     if not ENV_LOCAL_JSON.exists():
         return {}
     try:
@@ -27,7 +37,11 @@ def _load_local_env_vars() -> dict[str, str]:
         )
         if isinstance(env_vars, dict):
             print("   📋 Loaded local env vars from env.local.json")
-            return {str(k): str(v) for k, v in env_vars.items()}
+            return {
+                str(k): str(v)
+                for k, v in env_vars.items()
+                if str(k) not in _blocked and v is not None
+            }
     except Exception as exc:  # noqa: BLE001
         print(f"   ⚠️  Failed to parse env.local.json: {exc}")
     return {}
@@ -154,7 +168,9 @@ class LambdaConstruct(Construct):
                 resources=[
                     f"arn:aws:secretsmanager:*:*:secret:{config.db_secret_id}*",
                     f"arn:aws:secretsmanager:*:*:secret:{config.jwt.secret_id}*",
-                    f"arn:aws:secretsmanager:*:*:secret:/{os.environ.get('APP_NAME', 'contentos')}/*",
+                    # Tenant BYOK secrets (not the platform AI secret — that is
+                    # granted only to agent/ai via AiSecretsConstruct.grant_read).
+                    f"arn:aws:secretsmanager:*:*:secret:/{os.environ.get('APP_NAME', 'contentos')}/{config.environment}/tenants/*",
                 ],
             )
         )

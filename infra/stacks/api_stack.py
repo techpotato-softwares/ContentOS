@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import os
 
-from aws_cdk import RemovalPolicy, Stack, Tags
-from aws_cdk import aws_lambda as lambda_
-from constructs import Construct
+from aws_cdk import RemovalPolicy, Stack, Tags  # pyrefly: ignore[missing-import]
+from aws_cdk import aws_lambda as lambda_  # pyrefly: ignore[missing-import]
+from constructs import Construct  # pyrefly: ignore[missing-import]
 
 from config.environment import EnvironmentConfig
 from config.rds_config import get_rds_config
@@ -24,6 +24,7 @@ from cdk_constructs.permissions.lambda_permissions import (
 )
 from cdk_constructs.security.db_secrets_construct import DbSecretsConstruct
 from cdk_constructs.security.jwt_secrets_construct import JwtSecretsConstruct
+from cdk_constructs.security.ai_secrets_construct import AiSecretsConstruct
 from cdk_constructs.storage.s3_construct import S3Construct
 from paths import LAYER_BUNDLED, MARKETING_PATH, UI_BUILD_PATH
 from utils.manifest_reader import read_manifest
@@ -186,7 +187,7 @@ class ApiStack(Stack):
             )
             # Grant SES send if feature flag or always for weekly snapshot
             for fn in scheduled.functions.values():
-                from aws_cdk import aws_iam as iam
+                from aws_cdk import aws_iam as iam  # pyrefly: ignore[missing-import]
 
                 fn.add_to_role_policy(
                     iam.PolicyStatement(
@@ -199,7 +200,7 @@ class ApiStack(Stack):
         # Auth Lambda: verification + password-reset emails (least privilege SES)
         auth_fn = lambda_construct.functions.get("auth")
         if auth_fn:
-            from aws_cdk import aws_iam as iam
+            from aws_cdk import aws_iam as iam  # pyrefly: ignore[missing-import]
 
             auth_fn.add_environment(
                 "SES_ENABLED", os.environ.get("SES_ENABLED", "true")
@@ -232,6 +233,21 @@ class ApiStack(Stack):
             self, "JwtSecretsConstruct", config=config
         )
         permission_providers.append(jwt_secrets)
+
+        print("\n🔐 Creating AI secrets...")
+        ai_secrets = AiSecretsConstruct(
+            self, "AiSecretsConstruct", config=config
+        )
+        # Least privilege: only agent / ai Lambdas need platform AI credentials
+        for ai_name in ("agent", "ai"):
+            ai_fn = lambda_construct.functions.get(ai_name)
+            if not ai_fn:
+                continue
+            ai_fn.add_environment("AI_SECRET_ID", config.ai_secret_id)
+            ai_secrets.grant_read(ai_fn)
+            print(
+                f"   ✅ Injected AI_SECRET_ID={config.ai_secret_id} into {ai_name} Lambda"
+            )
 
         if permission_providers:
             print("\n🔐 Applying permissions to Lambda functions...")

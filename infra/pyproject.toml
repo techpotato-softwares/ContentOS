@@ -1,0 +1,14 @@
+# Pyrefly config for infra (AWS CDK).
+# Cursor/Pyrefly must use the infra venv so aws_cdk / constructs resolve.
+[project]
+name = "contentos-infra"
+version = "0.1.0"
+description = "ContentOS AWS CDK (Python)"
+requires-python = ">=3.11"
+
+[tool.pyrefly]
+project-includes = ["**/*.py"]
+project-excludes = [".venv/**", "cdk.out/**", "**/__pycache__/**"]
+search-path = [".", ".venv/Lib/site-packages"]
+python-interpreter-path = ".venv/Scripts/python.exe"
+disable-search-path-heuristics = true

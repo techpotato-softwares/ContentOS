@@ -1,0 +1,23 @@
+# Workspace-level Pyrefly config (Cursor Problems panel).
+# Pulls both API and infra packages from their local virtualenvs.
+project-includes = [
+  "apps/api/**/*.py",
+  "infra/**/*.py",
+]
+project-excludes = [
+  "**/node_modules/**",
+  "**/.venv/**",
+  "**/cdk.out/**",
+  "**/__pycache__/**",
+  "**/bundled/**",
+  "apps/web/**",
+  "apps/marketing/**",
+]
+search-path = [
+  "apps/api/layers/shared/python/src",
+  "apps/api",
+  "infra",
+  "apps/api/.venv/Lib/site-packages",
+  "infra/.venv/Lib/site-packages",
+]
+disable-search-path-heuristics = true

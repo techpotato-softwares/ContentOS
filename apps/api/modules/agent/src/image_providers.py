@@ -10,6 +10,7 @@ from typing import Optional
 import httpx
 
 from middleware.error_handler import AppError
+from modules.agent.src.providers import resolve_ai_credentials
 
 
 @dataclass
@@ -85,9 +86,13 @@ def _bedrock_runtime_client():
 
 
 class OpenAIImageProvider(ImageBackgroundProvider):
-    def __init__(self, model_id: str = "gpt-image-1"):
+    def __init__(self, model_id: str = "gpt-image-1", api_key: str | None = None):
         self.model_id = model_id
-        self.api_key = (os.environ.get("OPENAI_API_KEY") or "").strip().strip('"').strip("'")
+        if api_key is not None:
+            self.api_key = api_key.strip().strip('"').strip("'")
+        else:
+            creds = resolve_ai_credentials(require_provider_key=False)
+            self.api_key = creds.openai_api_key
         if not self.api_key:
             raise AppError("OPENAI_API_KEY missing", 500, "AI_CONFIG")
 
@@ -477,7 +482,10 @@ REGISTRY: list[ImageModelInfo] = [
 
 def list_image_models() -> list[dict]:
     bedrock_ok = bedrock_image_configured()
-    openai_ok = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
+    try:
+        openai_ok = bool(resolve_ai_credentials(require_provider_key=False).openai_api_key)
+    except AppError:
+        openai_ok = False
     out = []
     for m in REGISTRY:
         if m.id == "stub":
@@ -507,10 +515,20 @@ def list_image_models() -> list[dict]:
 
 def get_image_provider(model_id: Optional[str] = None) -> ImageBackgroundProvider:
     mid = (model_id or os.environ.get("OPENAI_IMAGE_MODEL") or "gpt-image-1").strip()
-    if mid == "stub" or (os.environ.get("AI_PROVIDER") or "").lower() == "stub":
+    try:
+        creds = resolve_ai_credentials(require_provider_key=False)
+        openai_key = creds.openai_api_key
+        provider_default = creds.provider
+    except AppError:
+        openai_key = ""
+        provider_default = (os.environ.get("AI_PROVIDER") or "").lower()
+    if mid == "stub" or provider_default == "stub":
         return StubImageProvider()
     if mid in ("gpt-image-1", "dall-e-3", "gpt-image-1-mini"):
-        return OpenAIImageProvider(mid if mid != "gpt-image-1-mini" else "gpt-image-1")
+        return OpenAIImageProvider(
+            mid if mid != "gpt-image-1-mini" else "gpt-image-1",
+            api_key=openai_key,
+        )
     if mid.startswith("bedrock-"):
         return BedrockImageProvider(mid)
     if mid == "ideogram":
@@ -522,7 +540,10 @@ def get_image_provider(model_id: Optional[str] = None) -> ImageBackgroundProvide
             return RecraftImageProvider()
         return MissingKeyImageProvider("recraft", "RECRAFT_API_KEY")
     # Default OpenAI
-    return OpenAIImageProvider(os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"))
+    return OpenAIImageProvider(
+        os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"),
+        api_key=openai_key,
+    )
 
 
 def nearest_gen_size(preset_w: int, preset_h: int, model_id: str) -> str:
