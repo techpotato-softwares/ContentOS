@@ -42,21 +42,17 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["layers/shared/python/src", "."]
 
-# Shared-layer imports (`middleware`, `database`, `utils`) live under
-# layers/shared/python/src — not apps/api/src. Disable src/ heuristics.
-[tool.pyrefly]
-project-includes = ["**/*.py"]
-project-excludes = [
-  ".venv/**",
-  "**/__pycache__/**",
-  "**/.pytest_cache/**",
-  "**/bundled/**",
-  "contentos.egg-info/**",
+# Commit / CI gate: catch real bugs (e.g. undefined names) without blocking on style debt.
+# Expand `select` over time (E/F/I/UP) once the codebase is cleaned up.
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+src = ["layers/shared/python/src", "modules", "scripts", "src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E9",   # runtime / syntax errors
+  "F63",  # invalid star-args / print
+  "F7",   # syntax errors related to __future__
+  "F82",  # undefined names (F821–F823)
 ]
-search-path = [
-  "layers/shared/python/src",
-  ".",
-  "modules",
-]
-python-interpreter-path = ".venv/Scripts/python.exe"
-disable-search-path-heuristics = true
