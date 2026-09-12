@@ -3,18 +3,22 @@ from __future__ import annotations
 import json
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any, cast
 
-from passlib.hash import bcrypt
+import passlib.hash as _passlib_hash
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
+
+# passlib exposes bcrypt dynamically; getattr keeps runtime + type-checkers happy
+bcrypt = cast(Any, getattr(_passlib_hash, "bcrypt"))
 
 from decorators import Controller, Post, Get
 from decorators.auth_decorators import ApiPublic, RequirePermission
 from database import get_session
 from database.models import User, Role, RolePermission, Permission, Tenant
-from utils.webtoken import generate_tokens
+from utils.webtoken import JWTPayload, generate_tokens
 from utils.auth_tokens import (
     PURPOSE_EMAIL_VERIFY,
     PURPOSE_PASSWORD_RESET,
@@ -31,6 +35,30 @@ from middleware.error_handler import (
     create_success_response,
 )
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
+
+# Platform RBAC catalog — ensured idempotently on register so production signup
+# does not depend on scripts/seed.py (seed is local/dev only).
+_PERMS = [
+    ("admin:tenants", "Manage all tenants"),
+    ("training:manage", "Edit training schema"),
+    ("tenant:admin", "Tenant administration"),
+    ("agent:chat", "Agent chat & generate"),
+    ("posts:review", "Review posts"),
+    ("posts:publish", "Publish to LinkedIn"),
+    ("admin", "Legacy admin"),
+]
+
+_ROLES = {
+    "super_admin": [p[0] for p in _PERMS],
+    "tenant_admin": [
+        "training:manage",
+        "tenant:admin",
+        "agent:chat",
+        "posts:review",
+        "posts:publish",
+    ],
+    "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
+}
 
 # Generic copy for request endpoints — prevents email/account enumeration
 _VERIFY_REQUEST_MSG = (
@@ -97,39 +125,47 @@ def _email_verified(user: User) -> bool:
     return bool(getattr(user, "email_verified_at", None))
 
 
-def _token_payload(user: User, role: Role | None, permissions: list[str], modules: list[str]) -> dict:
+def _token_payload(
+    user: User, role: Role | None, permissions: list[str], modules: list[str]
+) -> JWTPayload:
     """JWT claims: camelCase is the API convention; role + tenantId required for authz."""
-    return {
-        "userId": user.user_id,
-        "username": user.username,
-        "email": user.email,
-        "role": role.role_name if role else None,
-        "tenantId": user.tenant_id,
+    payload: JWTPayload = {
+        "userId": user.user_id or 0,
+        "username": user.username or "",
+        "email": user.email or "",
+        "tenantId": user.tenant_id if user.tenant_id is not None else 0,
         "permissions": permissions,
         "modulesEnabled": modules,
         "emailVerified": _email_verified(user),
         "tv": int(getattr(user, "token_version", 0) or 0),
     }
+    if role and role.role_name:
+        payload["role"] = role.role_name
+    return payload
 
 
-def _unique_index_names_for_columns(table, column_names: set[str]) -> frozenset[str]:
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _unique_index_names_for_columns(table: Any, column_names: set[str]) -> frozenset[str]:
     """Resolve unique index/constraint names from SQLAlchemy metadata (no hard-coded guesses)."""
     names: set[str] = set()
     cols = {table.c[n] for n in column_names if n in table.c}
     for idx in table.indexes:
         if idx.unique and idx.name and cols.intersection(idx.columns):
-            names.add(idx.name)
+            names.add(str(idx.name))
     for cst in table.constraints:
         if isinstance(cst, UniqueConstraint) and cst.name:
             cst_cols = set(cst.columns)
             if cols.intersection(cst_cols):
-                names.add(cst.name)
+                names.add(str(cst.name))
     return frozenset(names)
 
 
 # Resolved from models: Field(unique=True) → ix_users_email / ix_users_username
 _USER_IDENTITY_CONSTRAINTS = _unique_index_names_for_columns(
-    User.__table__, {"email", "username"}
+    cast(Any, User).__table__, {"email", "username"}
 )
 
 
@@ -326,11 +362,11 @@ class AuthController:
         with get_session() as session:
             ensure_auth_schema(session)
             user_id = decoded.get("userId")
-            user = session.get(User, int(user_id)) if user_id else None
+            user = session.get(User, user_id) if user_id is not None else None
             if not user or not user.is_active:
                 raise AppError("Invalid or expired refresh token", 401, "UNAUTHORIZED")
             expected_tv = int(getattr(user, "token_version", 0) or 0)
-            if int(decoded.get("tv") or 0) != expected_tv:
+            if (decoded.get("tv") or 0) != expected_tv:
                 raise AppError(
                     "Session expired — please sign in again",
                     401,
@@ -476,7 +512,12 @@ class AuthController:
                 session.add(user)
                 session.flush()
 
-                # Single atomic commit: Tenant + User (tenant_admin membership via role_id)
+                raw_verify = issue_token(
+                    session, user=user, purpose=PURPOSE_EMAIL_VERIFY
+                )
+                mail = send_verification_email(to_email=email, raw_token=raw_verify)
+
+                # Single atomic commit: Tenant + User + verify token
                 session.commit()
                 session.refresh(tenant)
                 session.refresh(user)
@@ -494,7 +535,7 @@ class AuthController:
                 return create_success_response(
                     {
                         "success": True,
-                        "message": "Registered",
+                        "message": "Registered — check your email to verify your account",
                         **tokens,
                         "user": _auth_user_dict(
                             user, role, permission_codes, modules
@@ -504,6 +545,8 @@ class AuthController:
                             "name": tenant.name,
                             "slug": tenant.slug,
                         },
+                        "emailVerificationRequired": True,
+                        **_maybe_dev_link(mail),
                     },
                     201,
                 )
@@ -561,8 +604,8 @@ class AuthController:
                 session, raw_token=str(raw), purpose=PURPOSE_EMAIL_VERIFY
             )
             if not _email_verified(user):
-                user.email_verified_at = datetime.utcnow()
-                user.updated_at = datetime.utcnow()
+                user.email_verified_at = _utc_now()
+                user.updated_at = _utc_now()
                 session.add(user)
             session.commit()
             session.refresh(user)
@@ -623,10 +666,10 @@ class AuthController:
             )
             user.password = bcrypt.hash(password)
             user.token_version = int(getattr(user, "token_version", 0) or 0) + 1
-            user.updated_at = datetime.utcnow()
+            user.updated_at = _utc_now()
             # Optional: mark email verified on successful reset via known mailbox
             if user.email_verified_at is None:
-                user.email_verified_at = datetime.utcnow()
+                user.email_verified_at = _utc_now()
             session.add(user)
             session.commit()
             return create_success_response(

@@ -23,6 +23,8 @@
         { "method": "GET", "path": "/api/tenants/me/theme", "controller": "TenantsController", "action": "get_theme" },
         { "method": "GET", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "get_training" },
         { "method": "PUT", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "put_training" },
+        { "method": "GET", "path": "/api/tenants/me/onboarding", "controller": "TenantsController", "action": "get_onboarding" },
+        { "method": "PUT", "path": "/api/tenants/me/onboarding", "controller": "TenantsController", "action": "put_onboarding" },
         { "method": "GET", "path": "/api/admin/tenants/{tenantId}/training", "controller": "TenantsController", "action": "admin_get_training" },
         { "method": "PUT", "path": "/api/admin/tenants/{tenantId}/training", "controller": "TenantsController", "action": "admin_put_training" },
         { "method": "GET", "path": "/api/admin/tenants/{tenantId}/training/preview", "controller": "TenantsController", "action": "training_preview" },
