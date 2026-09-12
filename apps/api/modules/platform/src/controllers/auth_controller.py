@@ -322,11 +322,13 @@ def _maybe_dev_link(mail_result: dict) -> dict:
 class AuthController:
     @Post("/login")
     @ApiPublic()
-    def login(self, data: dict):
+    def login(self, data: dict, event=None):
         username = (data or {}).get("username")
         password = (data or {}).get("password")
         if not username or not password:
             raise ValidationError("Username and password are required")
+        enforce_auth_rate_limit("login", identity=str(username), event=event)
+        reject_seed_login_in_production(str(username), str(password))
         with get_session() as session:
             ensure_auth_schema(session)
             user = session.exec(
@@ -387,35 +389,21 @@ class AuthController:
 
     @Post("/register")
     @ApiPublic()
-    def register(self, data: dict):
-        """Self-serve signup: Tenant + User + tenant_admin membership in one transaction.
-
-        Production must not require scripts/seed.py. Roles/permissions are ensured
-        idempotently here. On any failure the whole unit rolls back (no orphans).
-        """
-        body = data or {}
-        username = (body.get("username") or "").strip()
-        email = (body.get("email") or "").strip().lower()
-        password = body.get("password")
-        invite_token = (body.get("inviteToken") or body.get("invite_token") or "").strip()
-        company_name = (
-            body.get("companyName") or body.get("company_name") or ""
-        ).strip()
-        if not username:
-            raise ValidationError("username is required")
-        if not email:
-            raise ValidationError("email is required")
-        if password is None or not isinstance(password, str) or password == "":
-            raise ValidationError("password is required")
-        if len(password) < 8:
-            raise ValidationError("password must be at least 8 characters")
-        if not invite_token and not company_name:
-            raise ValidationError("companyName is required")
-
-        preferred_slug = body.get("slug")
-        if preferred_slug is not None:
-            preferred_slug = str(preferred_slug).strip() or None
-
+    def register(self, data: dict, event=None):
+        """Create a company tenant + tenant_admin user."""
+        username = (data or {}).get("username")
+        email = (data or {}).get("email")
+        password = (data or {}).get("password")
+        company_name = (data or {}).get("companyName") or (data or {}).get("company_name")
+        if not all([username, email, password, company_name]):
+            raise ValidationError("username, email, password, companyName are required")
+        enforce_auth_rate_limit("register", identity=str(email or username), event=event)
+        reject_seed_login_in_production(str(username), str(password))
+        reject_seed_login_in_production(str(email), str(password))
+        slug = (
+            (data or {}).get("slug")
+            or company_name.lower().replace(" ", "-").replace("_", "-")[:48]
+        )
         with get_session() as session:
             try:
                 # Pre-checks for clear 409 messages (race still handled via IntegrityError)

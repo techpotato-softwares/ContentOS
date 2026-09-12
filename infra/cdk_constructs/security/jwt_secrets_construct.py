@@ -31,7 +31,7 @@ class JwtSecretsConstruct(Construct):
             self,
             "JwtSecret",
             secret_name=config.jwt.secret_id,
-            description=f"JWT signing secrets for ArcForge - {config.environment}",
+            description=f"JWT signing secrets for ContentOS - {config.environment}",
             generate_secret_string=secretsmanager.SecretStringGenerator(
                 secret_string_template=json.dumps(
                     {"JWT_REFRESH_SECRET": self._placeholder()}
@@ -59,6 +59,15 @@ class JwtSecretsConstruct(Construct):
             value=self.secret.secret_arn,
             description=f"JWT Secrets ARN - {config.environment}",
             export_name=f"ArcForgeJwtSecretArn-{config.environment}",
+        )
+        CfnOutput(
+            self,
+            "JwtSecretId",
+            value=config.jwt.secret_id,
+            description=(
+                f"JWT Secrets Manager id for Lambda JWT_SECRET_ID ({config.environment})"
+            ),
+            export_name=f"ContentOSJwtSecretId-{config.environment}",
         )
         print(f"   ✅ Created JWT secret: {config.jwt.secret_id}")
 
