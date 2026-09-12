@@ -11,7 +11,6 @@ import { setSession } from "@/features/auth/authSlice"
 import { useAppDispatch } from "@/app/hooks"
 import { Button } from "@/components/ui/button"
 import { Input, Label } from "@/components/ui/input"
-import { cn } from "@/shared/lib/utils"
 
 function apiErrorMessage(err: unknown): string | undefined {
   if (!err || typeof err !== "object") return undefined
@@ -46,7 +45,6 @@ export function LoginPage() {
   const [otpStep, setOtpStep] = useState<OtpStep>("email")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [otpCode, setOtpCode] = useState("")
   const [companyName, setCompanyName] = useState("")
@@ -241,6 +239,101 @@ export function LoginPage() {
           </div>
         )}
 
+
+  const submitVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setFormError(null)
+    const code = otpCode.trim()
+    if (!/^\d{4,8}$/.test(code)) {
+      setFormError("Enter the numeric code from your email.")
+      return
+    }
+    try {
+      const res = await verifyOtp({ email: email.trim().toLowerCase(), code }).unwrap()
+      applySession(res)
+    } catch (err) {
+      const msg = apiErrorMessage(err)
+      if (msg) setFormError(msg)
+    }
+  }
+
+  const resetToLoginPassword = () => {
+    setMode("login")
+    setLoginMethod("password")
+    setOtpStep("email")
+    setFormError(null)
+    setOtpInfo(null)
+  }
+
+  return (
+    <div className="min-h-dvh flex items-center justify-center p-4 sm:p-6">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="glass-panel w-full max-w-md rounded-3xl p-5 sm:p-8 space-y-5"
+      >
+        <div>
+          <h1 className="font-display text-2xl sm:text-3xl">ContentOS</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            B2B LinkedIn image posts with company-consistent context
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant={mode === "login" ? "default" : "outline"}
+            className="flex-1"
+            onClick={resetToLoginPassword}
+          >
+            Login
+          </Button>
+          <Button
+            type="button"
+            variant={mode === "register" ? "default" : "outline"}
+            className="flex-1"
+            onClick={() => {
+              setMode("register")
+              setFormError(null)
+              setOtpInfo(null)
+            }}
+          >
+            Register company
+          </Button>
+        </div>
+
+        {mode === "login" && (
+          <div className="flex gap-2 rounded-xl border border-border p-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={loginMethod === "password" ? "default" : "ghost"}
+              className="flex-1"
+              onClick={() => {
+                setLoginMethod("password")
+                setFormError(null)
+                setOtpInfo(null)
+              }}
+            >
+              Password
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={loginMethod === "otp" ? "default" : "ghost"}
+              className="flex-1"
+              onClick={() => {
+                setLoginMethod("otp")
+                setOtpStep("email")
+                setFormError(null)
+                setOtpInfo(null)
+              }}
+            >
+              Email OTP
+            </Button>
+          </div>
+        )}
+
         {mode === "register" && (
           <form onSubmit={submitPasswordOrRegister} className="space-y-5">
             <div className="space-y-1">
@@ -253,64 +346,49 @@ export function LoginPage() {
                 autoComplete="organization"
               />
             </div>
-
-            <AnimatePresence mode="wait" initial={false}>
-              {isRegister && (
-                <motion.div
-                  key="register-fields"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.25 }}
-                  className="space-y-4 overflow-hidden"
-                >
-                  <div className="space-y-1.5">
-                    <Label htmlFor="company" className="text-[#c5dbd2]">
-                      Company name
-                    </Label>
-                    <Input
-                      id="company"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      placeholder="Acme Cloud"
-                      required={isRegister}
-                      autoComplete="organization"
-                      className="auth-field"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="email" className="text-[#c5dbd2]">
-                      Work email
-                    </Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@company.com"
-                      required={isRegister}
-                      autoComplete="email"
-                      className="auth-field"
-                    />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="username" className="text-[#c5dbd2]">
-                Username
-              </Label>
+            <div className="space-y-1">
+              <Label>Work email</Label>
               <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder={isRegister ? "choose a username" : "username or email"}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
                 required
-                autoComplete="username"
-                className="auth-field"
+                autoComplete="email"
               />
             </div>
+            <div className="space-y-1">
+              <Label>Username</Label>
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                autoComplete="username"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Password</Label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            {error && (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={busy}>
+              Create account
+            </Button>
+          </form>
+        )}
+
+        {mode === "login" && loginMethod === "password" && (
+          <form onSubmit={submitPasswordOrRegister} className="space-y-5">
             <div className="space-y-1">
               <Label>Username</Label>
               <Input
@@ -404,7 +482,7 @@ export function LoginPage() {
             </p>
             {otpInfo && (
               <p className="text-sm text-muted-foreground" role="status">
-                {otpInfo.includes("http://") ? (
+                {otpInfo.includes("http://") || otpInfo.includes("https://") ? (
                   <>
                     {otpInfo.split("Open mailbox:")[0]}
                     <a

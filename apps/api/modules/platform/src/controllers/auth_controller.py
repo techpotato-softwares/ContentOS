@@ -4,6 +4,10 @@ import json
 import os
 import re
 import secrets
+from datetime import datetime, timezone
+from typing import Any, cast
+
+import passlib.hash as _passlib_hash
 from datetime import datetime, timedelta
 
 from passlib.hash import bcrypt
@@ -11,9 +15,13 @@ from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from decorators import Controller, Post, Get
-from decorators.auth_decorators import ApiPublic, RequirePermission
+# passlib exposes bcrypt dynamically; getattr keeps runtime + type-checkers happy
+bcrypt = cast(Any, getattr(_passlib_hash, "bcrypt"))
+
 from database import get_session
+from database.models import Permission, Role, RolePermission, Tenant, User
+from decorators import Controller, Get, Post
+from decorators.auth_decorators import ApiPublic, RequirePermission
 from database.models import (
     User,
     Role,
@@ -26,11 +34,48 @@ from utils.webtoken import generate_tokens
 from utils import email_otp as otp_util
 from middleware.error_handler import (
     AppError,
-    ValidationError,
     ConflictError,
+    ValidationError,
     create_success_response,
 )
-from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
+from training.schema import BrandVisualSection, CompanySection, TenantTrainingSchema
+from utils.auth_email import send_password_reset_email, send_verification_email
+from utils.auth_tokens import (
+    PURPOSE_EMAIL_VERIFY,
+    PURPOSE_PASSWORD_RESET,
+    consume_token,
+    ensure_auth_schema,
+    is_local,
+    issue_token,
+)
+from utils.onboarding import ensure_onboarding_schema
+from utils.rate_limit import enforce_auth_rate_limit
+from utils.seed_credentials import reject_seed_login_in_production
+from utils.webtoken import JWTPayload, generate_tokens
+
+# Platform RBAC catalog — ensured idempotently on register so production signup
+# does not depend on scripts/seed.py (seed is local/dev only).
+_PERMS = [
+    ("admin:tenants", "Manage all tenants"),
+    ("training:manage", "Edit training schema"),
+    ("tenant:admin", "Tenant administration"),
+    ("agent:chat", "Agent chat & generate"),
+    ("posts:review", "Review posts"),
+    ("posts:publish", "Publish to LinkedIn"),
+    ("admin", "Legacy admin"),
+]
+
+_ROLES = {
+    "super_admin": [p[0] for p in _PERMS],
+    "tenant_admin": [
+        "training:manage",
+        "tenant:admin",
+        "agent:chat",
+        "posts:review",
+        "posts:publish",
+    ],
+    "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
+}
 
 # Platform RBAC catalog — ensured idempotently on register so production signup
 # does not depend on scripts/seed.py (seed is local/dev only).
@@ -182,13 +227,14 @@ def _integrity_constraint_name(exc: IntegrityError) -> str | None:
 
 
 def _is_user_identity_unique_violation(exc: IntegrityError) -> bool:
-    """True only for users.email / users.username uniqueness — not slug/RBAC/other."""
+    """True only for users.email / users.username uniqueness ??? not slug/RBAC/other."""
     constraint = _integrity_constraint_name(exc)
     if constraint and constraint in _USER_IDENTITY_CONSTRAINTS:
         return True
 
     # SQLite (and some drivers): "UNIQUE constraint failed: users.email"
     msg = str(getattr(exc, "orig", None) or exc).lower()
+    # PostgreSQL unique_violation without a matching constraint name ??? not a user conflict
     # PostgreSQL unique_violation without a matching constraint name → not a user conflict
     # (e.g. tenants.slug, roles.role_name, permissions.permission_code, unknown)
     return "users.email" in msg or "users.username" in msg
@@ -281,7 +327,7 @@ def _ensure_platform_rbac(session) -> Role:
                         )
                         session.flush()
                 except IntegrityError:
-                    # Concurrent insert of the same link — safe to ignore
+                    # Concurrent insert of the same link ??? safe to ignore
                     pass
         if role_name == "tenant_admin":
             tenant_admin = role
@@ -306,6 +352,10 @@ def _auth_user_dict(
     }
 
 
+def _maybe_dev_link(mail_result: dict) -> dict:
+    if is_local() and mail_result.get("devLink"):
+        return {"devLink": mail_result["devLink"]}
+    return {}
 def _issue_auth_tokens(session, user: User) -> dict:
     """Same JWT + user payload as password login (tenant session via tenantId claim)."""
     role, permission_codes = _user_permissions(session, user.role_id)
@@ -629,7 +679,7 @@ class AuthController:
             expected_tv = int(getattr(user, "token_version", 0) or 0)
             if (decoded.get("tv") or 0) != expected_tv:
                 raise AppError(
-                    "Session expired — please sign in again",
+                    "Session expired ??? please sign in again",
                     401,
                     "SESSION_REVOKED",
                 )
@@ -791,6 +841,7 @@ class AuthController:
                 return create_success_response(
                     {
                         "success": True,
+                        "message": "Registered ??? check your email to verify your account",
                         "message": "Registered — check your email to verify your account",
                         **tokens,
                         "user": _auth_user_dict(
@@ -845,6 +896,7 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
+                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
             # Always same message (enumeration-safe)
@@ -904,6 +956,7 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
+                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
         return create_success_response(out)
@@ -931,7 +984,7 @@ class AuthController:
             return create_success_response(
                 {
                     "success": True,
-                    "message": "Password updated — sign in with your new password",
+                    "message": "Password updated ??? sign in with your new password",
                 }
             )
 
