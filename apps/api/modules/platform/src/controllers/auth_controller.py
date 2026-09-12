@@ -3,23 +3,65 @@ from __future__ import annotations
 import json
 import re
 import secrets
-from passlib.hash import bcrypt
+from datetime import datetime, timezone
+from typing import Any, cast
+
+import passlib.hash as _passlib_hash
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from decorators import Controller, Post, Get
-from decorators.auth_decorators import ApiPublic, RequirePermission
+# passlib exposes bcrypt dynamically; getattr keeps runtime + type-checkers happy
+bcrypt = cast(Any, getattr(_passlib_hash, "bcrypt"))
+
 from database import get_session
-from database.models import User, Role, RolePermission, Permission, Tenant
-from utils.webtoken import generate_tokens
+from database.models import Permission, Role, RolePermission, Tenant, User
+from decorators import Controller, Get, Post
+from decorators.auth_decorators import ApiPublic, RequirePermission
 from middleware.error_handler import (
     AppError,
-    ValidationError,
     ConflictError,
+    ValidationError,
     create_success_response,
 )
-from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
+from training.schema import BrandVisualSection, CompanySection, TenantTrainingSchema
+from utils.auth_email import send_password_reset_email, send_verification_email
+from utils.auth_tokens import (
+    PURPOSE_EMAIL_VERIFY,
+    PURPOSE_PASSWORD_RESET,
+    consume_token,
+    ensure_auth_schema,
+    is_local,
+    issue_token,
+)
+from utils.onboarding import ensure_onboarding_schema
+from utils.rate_limit import enforce_auth_rate_limit
+from utils.seed_credentials import reject_seed_login_in_production
+from utils.webtoken import JWTPayload, generate_tokens
+
+# Platform RBAC catalog — ensured idempotently on register so production signup
+# does not depend on scripts/seed.py (seed is local/dev only).
+_PERMS = [
+    ("admin:tenants", "Manage all tenants"),
+    ("training:manage", "Edit training schema"),
+    ("tenant:admin", "Tenant administration"),
+    ("agent:chat", "Agent chat & generate"),
+    ("posts:review", "Review posts"),
+    ("posts:publish", "Publish to LinkedIn"),
+    ("admin", "Legacy admin"),
+]
+
+_ROLES = {
+    "super_admin": [p[0] for p in _PERMS],
+    "tenant_admin": [
+        "training:manage",
+        "tenant:admin",
+        "agent:chat",
+        "posts:review",
+        "posts:publish",
+    ],
+    "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
+}
 
 # Generic copy for request endpoints — prevents email/account enumeration
 _VERIFY_REQUEST_MSG = (
@@ -49,11 +91,12 @@ def _user_permissions(session, role_id: int | None) -> tuple[Role | None, list[s
 def _modules_for_tenant(session, tenant_id: int | None) -> list[str]:
     modules = ["platform", "tenants", "agent", "publishing"]
     if tenant_id:
+        ensure_onboarding_schema(session)
         tenant = session.get(Tenant, tenant_id)
         if tenant and tenant.modules_enabled:
             try:
                 modules = json.loads(tenant.modules_enabled)
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 pass
     return modules
 
@@ -62,39 +105,47 @@ def _email_verified(user: User) -> bool:
     return bool(getattr(user, "email_verified_at", None))
 
 
-def _token_payload(user: User, role: Role | None, permissions: list[str], modules: list[str]) -> dict:
+def _token_payload(
+    user: User, role: Role | None, permissions: list[str], modules: list[str]
+) -> JWTPayload:
     """JWT claims: camelCase is the API convention; role + tenantId required for authz."""
-    return {
-        "userId": user.user_id,
-        "username": user.username,
-        "email": user.email,
-        "role": role.role_name if role else None,
-        "tenantId": user.tenant_id,
+    payload: JWTPayload = {
+        "userId": user.user_id or 0,
+        "username": user.username or "",
+        "email": user.email or "",
+        "tenantId": user.tenant_id if user.tenant_id is not None else 0,
         "permissions": permissions,
         "modulesEnabled": modules,
         "emailVerified": _email_verified(user),
         "tv": int(getattr(user, "token_version", 0) or 0),
     }
+    if role and role.role_name:
+        payload["role"] = role.role_name
+    return payload
 
 
-def _unique_index_names_for_columns(table, column_names: set[str]) -> frozenset[str]:
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _unique_index_names_for_columns(table: Any, column_names: set[str]) -> frozenset[str]:
     """Resolve unique index/constraint names from SQLAlchemy metadata (no hard-coded guesses)."""
     names: set[str] = set()
     cols = {table.c[n] for n in column_names if n in table.c}
     for idx in table.indexes:
         if idx.unique and idx.name and cols.intersection(idx.columns):
-            names.add(idx.name)
+            names.add(str(idx.name))
     for cst in table.constraints:
         if isinstance(cst, UniqueConstraint) and cst.name:
             cst_cols = set(cst.columns)
             if cols.intersection(cst_cols):
-                names.add(cst.name)
+                names.add(str(cst.name))
     return frozenset(names)
 
 
 # Resolved from models: Field(unique=True) → ix_users_email / ix_users_username
 _USER_IDENTITY_CONSTRAINTS = _unique_index_names_for_columns(
-    User.__table__, {"email", "username"}
+    cast(Any, User).__table__, {"email", "username"}
 )
 
 
@@ -114,19 +165,16 @@ def _integrity_constraint_name(exc: IntegrityError) -> str | None:
 
 
 def _is_user_identity_unique_violation(exc: IntegrityError) -> bool:
-    """True only for users.email / users.username uniqueness — not slug/RBAC/other."""
+    """True only for users.email / users.username uniqueness ??? not slug/RBAC/other."""
     constraint = _integrity_constraint_name(exc)
     if constraint and constraint in _USER_IDENTITY_CONSTRAINTS:
         return True
 
     # SQLite (and some drivers): "UNIQUE constraint failed: users.email"
     msg = str(getattr(exc, "orig", None) or exc).lower()
-    if "users.email" in msg or "users.username" in msg:
-        return True
-
-    # PostgreSQL unique_violation without a matching constraint name → not a user conflict
+    # PostgreSQL unique_violation without a matching constraint name ??? not a user conflict
     # (e.g. tenants.slug, roles.role_name, permissions.permission_code, unknown)
-    return False
+    return "users.email" in msg or "users.username" in msg
 
 
 def _user_conflict_from_integrity(exc: IntegrityError) -> ConflictError | None:
@@ -216,7 +264,7 @@ def _ensure_platform_rbac(session) -> Role:
                         )
                         session.flush()
                 except IntegrityError:
-                    # Concurrent insert of the same link — safe to ignore
+                    # Concurrent insert of the same link ??? safe to ignore
                     pass
         if role_name == "tenant_admin":
             tenant_admin = role
@@ -237,20 +285,30 @@ def _auth_user_dict(
         "tenantId": user.tenant_id,
         "permissions": permission_codes,
         "modulesEnabled": modules,
+        "emailVerified": _email_verified(user),
     }
+
+
+def _maybe_dev_link(mail_result: dict) -> dict:
+    if is_local() and mail_result.get("devLink"):
+        return {"devLink": mail_result["devLink"]}
+    return {}
 
 
 @Controller(path="/api", lambda_name="auth")
 class AuthController:
     @Post("/login")
     @ApiPublic()
-    def login(self, data: dict):
+    def login(self, data: dict, event=None):
         username = (data or {}).get("username")
         password = (data or {}).get("password")
         if not username or not password:
             raise ValidationError("Username and password are required")
+        enforce_auth_rate_limit("login", identity=str(username), event=event)
+        reject_seed_login_in_production(str(username), str(password))
         with get_session() as session:
             ensure_auth_schema(session)
+            ensure_onboarding_schema(session)
             user = session.exec(
                 select(User).where(
                     ((User.username == username) | (User.email == username))
@@ -283,14 +341,15 @@ class AuthController:
         decoded = verify_refresh_token(token)
         with get_session() as session:
             ensure_auth_schema(session)
+            ensure_onboarding_schema(session)
             user_id = decoded.get("userId")
-            user = session.get(User, int(user_id)) if user_id else None
+            user = session.get(User, user_id) if user_id is not None else None
             if not user or not user.is_active:
                 raise AppError("Invalid or expired refresh token", 401, "UNAUTHORIZED")
             expected_tv = int(getattr(user, "token_version", 0) or 0)
-            if int(decoded.get("tv") or 0) != expected_tv:
+            if (decoded.get("tv") or 0) != expected_tv:
                 raise AppError(
-                    "Session expired — please sign in again",
+                    "Session expired ??? please sign in again",
                     401,
                     "SESSION_REVOKED",
                 )
@@ -309,37 +368,25 @@ class AuthController:
 
     @Post("/register")
     @ApiPublic()
-    def register(self, data: dict):
-        """Self-serve signup: Tenant + User + tenant_admin membership in one transaction.
-
-        Production must not require scripts/seed.py. Roles/permissions are ensured
-        idempotently here. On any failure the whole unit rolls back (no orphans).
-        """
+    def register(self, data: dict, event=None):
+        """Create a company tenant + tenant_admin user."""
         body = data or {}
-        username = (body.get("username") or "").strip()
-        email = (body.get("email") or "").strip().lower()
+        username = body.get("username")
+        email = body.get("email")
         password = body.get("password")
-        invite_token = (body.get("inviteToken") or body.get("invite_token") or "").strip()
-        company_name = (
-            body.get("companyName") or body.get("company_name") or ""
-        ).strip()
-        if not username:
-            raise ValidationError("username is required")
-        if not email:
-            raise ValidationError("email is required")
-        if password is None or not isinstance(password, str) or password == "":
-            raise ValidationError("password is required")
-        if len(password) < 8:
-            raise ValidationError("password must be at least 8 characters")
-        if not invite_token and not company_name:
-            raise ValidationError("companyName is required")
-
+        company_name = body.get("companyName") or body.get("company_name")
+        invite_token = body.get("inviteToken") or body.get("invite_token")
         preferred_slug = body.get("slug")
-        if preferred_slug is not None:
-            preferred_slug = str(preferred_slug).strip() or None
-
+        if not username or not email or not password:
+            raise ValidationError("username, email, password are required")
+        if not invite_token and not company_name:
+            raise ValidationError("username, email, password, companyName are required")
+        enforce_auth_rate_limit("register", identity=str(email or username), event=event)
+        reject_seed_login_in_production(str(username), str(password))
+        reject_seed_login_in_production(str(email), str(password))
         with get_session() as session:
             try:
+                ensure_onboarding_schema(session)
                 # Pre-checks for clear 409 messages (race still handled via IntegrityError)
                 if session.exec(select(User).where(User.email == email)).first():
                     raise ConflictError(
@@ -359,7 +406,7 @@ class AuthController:
                         load_invite_by_raw_token,
                     )
 
-                    invite = load_invite_by_raw_token(session, invite_token)
+                    invite = load_invite_by_raw_token(session, str(invite_token))
                     tenant = session.get(Tenant, invite.tenant_id)
                     if not tenant or not tenant.is_active:
                         raise ValidationError("Invite tenant is not available")
@@ -398,28 +445,35 @@ class AuthController:
                         }
                     )
 
+                # company_name required for self-serve tenant creation (checked above)
+                assert company_name is not None
                 role = session.exec(
                     select(Role).where(Role.role_name == "tenant_admin")
                 ).first()
                 if not role:
                     role = _ensure_platform_rbac(session)
-                slug = _unique_tenant_slug(session, company_name, preferred_slug)
+                slug = _unique_tenant_slug(
+                    session,
+                    str(company_name),
+                    str(preferred_slug) if preferred_slug else None,
+                )
 
                 training = TenantTrainingSchema(
                     company=CompanySection(
-                        legal_name=company_name, display_name=company_name
+                        legal_name=str(company_name),
+                        display_name=str(company_name),
                     ),
                     brand_visual=BrandVisualSection(ui_mode="platform"),
                 )
                 tenant = Tenant(
-                    name=company_name,
+                    name=str(company_name),
                     slug=slug,
                     modules_enabled=json.dumps(
                         ["platform", "tenants", "agent", "publishing"]
                     ),
                     training_json=training.model_dump_json(),
                     ui_mode="platform",
-                    app_display_name=company_name,
+                    app_display_name=str(company_name),
                 )
                 session.add(tenant)
                 session.flush()  # allocate tenant_id without committing
@@ -434,7 +488,12 @@ class AuthController:
                 session.add(user)
                 session.flush()
 
-                # Single atomic commit: Tenant + User (tenant_admin membership via role_id)
+                raw_verify = issue_token(
+                    session, user=user, purpose=PURPOSE_EMAIL_VERIFY
+                )
+                mail = send_verification_email(to_email=str(email), raw_token=raw_verify)
+
+                # Single atomic commit: Tenant + User + verify token
                 session.commit()
                 session.refresh(tenant)
                 session.refresh(user)
@@ -452,7 +511,7 @@ class AuthController:
                 return create_success_response(
                     {
                         "success": True,
-                        "message": "Registered",
+                        "message": "Registered ??? check your email to verify your account",
                         **tokens,
                         "user": _auth_user_dict(
                             user, role, permission_codes, modules
@@ -462,6 +521,8 @@ class AuthController:
                             "name": tenant.name,
                             "slug": tenant.slug,
                         },
+                        "emailVerificationRequired": True,
+                        **_maybe_dev_link(mail),
                     },
                     201,
                 )
@@ -504,7 +565,7 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
-                except Exception:
+                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                     session.rollback()
             # Always same message (enumeration-safe)
         return create_success_response(out)
@@ -519,8 +580,8 @@ class AuthController:
                 session, raw_token=str(raw), purpose=PURPOSE_EMAIL_VERIFY
             )
             if not _email_verified(user):
-                user.email_verified_at = datetime.utcnow()
-                user.updated_at = datetime.utcnow()
+                user.email_verified_at = _utc_now()
+                user.updated_at = _utc_now()
                 session.add(user)
             session.commit()
             session.refresh(user)
@@ -563,7 +624,7 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
-                except Exception:
+                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                     session.rollback()
         return create_success_response(out)
 
@@ -581,16 +642,16 @@ class AuthController:
             )
             user.password = bcrypt.hash(password)
             user.token_version = int(getattr(user, "token_version", 0) or 0) + 1
-            user.updated_at = datetime.utcnow()
+            user.updated_at = _utc_now()
             # Optional: mark email verified on successful reset via known mailbox
             if user.email_verified_at is None:
-                user.email_verified_at = datetime.utcnow()
+                user.email_verified_at = _utc_now()
             session.add(user)
             session.commit()
             return create_success_response(
                 {
                     "success": True,
-                    "message": "Password updated — sign in with your new password",
+                    "message": "Password updated ??? sign in with your new password",
                 }
             )
 
@@ -599,6 +660,7 @@ class AuthController:
     def me(self, user=None):
         with get_session() as session:
             ensure_auth_schema(session)
+            ensure_onboarding_schema(session)
             row = session.get(User, int((user or {}).get("userId") or 0))
             if not row:
                 return create_success_response({"user": user})
