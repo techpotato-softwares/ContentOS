@@ -9,15 +9,6 @@ type LoginResponse = {
   message?: string
 }
 
-type RequestOtpResponse = {
-  success: boolean
-  message: string
-  email: string
-  expiresIn: number
-  otpId?: number
-  inboxUrl?: string
-}
-
 /** Absolute API origin for full-page OAuth redirects (not relative SPA paths). */
 export function apiOrigin(): string {
   const raw = (import.meta.env.VITE_API_URL as string | undefined) || ""
@@ -38,33 +29,11 @@ export const authApi = createApi({
       query: (body) => ({ url: "/api/login", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),
-    requestOtp: build.mutation<RequestOtpResponse, { email: string }>({
-      query: (body) => ({
-        url: "/api/auth/otp/request",
-        method: "POST",
-        body: { email: body.email.trim().toLowerCase() },
-      }),
-      transformResponse: (r: unknown) => unwrapData<RequestOtpResponse>(r),
-    }),
-    verifyOtp: build.mutation<LoginResponse, { email: string; code: string }>({
-      query: (body) => ({
-        url: "/api/auth/otp/verify",
-        method: "POST",
-        body: {
-          email: body.email.trim().toLowerCase(),
-          code: body.code.trim(),
-        },
-      }),
-      transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
-    }),
     exchangeGoogleCode: build.mutation<LoginResponse, { code: string }>({
       query: (body) => ({
-        url: "/api/auth/otp/verify",
+        url: "/api/auth/google/exchange",
         method: "POST",
-        body: {
-          email: body.email.trim().toLowerCase(),
-          code: body.code.trim(),
-        },
+        body: { code: body.code },
       }),
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),
@@ -132,8 +101,7 @@ export const authApi = createApi({
         method: "POST",
         body: { token: body.token, password: body.password },
       }),
-      transformResponse: (r: unknown) =>
-        unwrapData<{ success?: boolean; message: string }>(r),
+      transformResponse: (r: unknown) => unwrapData<{ success?: boolean; message: string }>(r),
     }),
   }),
 })
@@ -141,8 +109,6 @@ export const authApi = createApi({
 export const {
   useLoginMutation,
   useRegisterMutation,
-  useRequestOtpMutation,
-  useVerifyOtpMutation,
   useExchangeGoogleCodeMutation,
   useRequestEmailVerificationMutation,
   useConfirmEmailVerificationMutation,
