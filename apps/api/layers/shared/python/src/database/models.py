@@ -232,6 +232,25 @@ class TenantInvite(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
+class EmailOtpChallenge(SQLModel, table=True):
+    """Short-lived email OTP for passwordless login (Wave 1).
+
+    Stores only a hash of the code. Consumed/expired rows are cleaned on request.
+    """
+
+    __tablename__ = "email_otp_challenges"
+    otp_id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True)
+    code_hash: str
+    purpose: str = Field(default="login", index=True)
+    expires_at: datetime = Field(index=True)
+    attempts: int = 0
+    max_attempts: int = 5
+    consumed_at: Optional[datetime] = None
+    request_ip: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # Keep demo table for kit compatibility (disabled in ContentOS modules by default)
 class DemoItem(SQLModel, table=True):
     __tablename__ = "demo_items"

@@ -9,16 +9,13 @@ type LoginResponse = {
   message?: string
 }
 
-/** Absolute API origin for full-page OAuth redirects (not relative SPA paths). */
-export function apiOrigin(): string {
-  const raw = (import.meta.env.VITE_API_URL as string | undefined) || ""
-  if (raw) return raw.replace(/\/$/, "")
-  // Dev: leave empty so browser hits Vite proxy (/api → :4001)
-  return ""
-}
-
-export function googleOAuthStartUrl(): string {
-  return `${apiOrigin()}/api/auth/google/start`
+type RequestOtpResponse = {
+  success: boolean
+  message: string
+  email: string
+  expiresIn: number
+  otpId?: number
+  inboxUrl?: string
 }
 
 export const authApi = createApi({
@@ -29,11 +26,22 @@ export const authApi = createApi({
       query: (body) => ({ url: "/api/login", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),
-    exchangeGoogleCode: build.mutation<LoginResponse, { code: string }>({
+    requestOtp: build.mutation<RequestOtpResponse, { email: string }>({
       query: (body) => ({
-        url: "/api/auth/google/exchange",
+        url: "/api/auth/otp/request",
         method: "POST",
-        body: { code: body.code },
+        body: { email: body.email.trim().toLowerCase() },
+      }),
+      transformResponse: (r: unknown) => unwrapData<RequestOtpResponse>(r),
+    }),
+    verifyOtp: build.mutation<LoginResponse, { email: string; code: string }>({
+      query: (body) => ({
+        url: "/api/auth/otp/verify",
+        method: "POST",
+        body: {
+          email: body.email.trim().toLowerCase(),
+          code: body.code.trim(),
+        },
       }),
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),
@@ -110,9 +118,6 @@ export const authApi = createApi({
 export const {
   useLoginMutation,
   useRegisterMutation,
-  useExchangeGoogleCodeMutation,
-  useRequestEmailVerificationMutation,
-  useConfirmEmailVerificationMutation,
-  useRequestPasswordResetMutation,
-  useConfirmPasswordResetMutation,
+  useRequestOtpMutation,
+  useVerifyOtpMutation,
 } = authApi
