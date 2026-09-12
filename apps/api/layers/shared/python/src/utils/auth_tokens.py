@@ -4,13 +4,12 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
-
-from sqlmodel import select
 
 from database.models import AuthToken, User
 from middleware.error_handler import AppError, ValidationError
+from sqlmodel import select
 
 Purpose = Literal["email_verify", "password_reset"]
 
@@ -27,14 +26,19 @@ _RATE_LIMIT = int(os.environ.get("AUTH_TOKEN_RATE_LIMIT", "5"))
 _RATE_WINDOW_MINUTES = int(os.environ.get("AUTH_TOKEN_RATE_WINDOW_MINUTES", "60"))
 
 
+def _utcnow() -> datetime:
+    """Naive UTC now (same semantics as deprecated datetime.utcnow)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def hash_token(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def hash_request_key(email: str) -> str:
     normalized = (email or "").strip().lower()
     pepper = os.environ.get("JWT_SECRET", "contentos")[:32]
-    return hashlib.sha256(f"{pepper}:{normalized}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{pepper}:{normalized}".encode()).hexdigest()
 
 
 def frontend_base_url() -> str:
@@ -47,15 +51,19 @@ def frontend_base_url() -> str:
 
 def ensure_auth_schema(session) -> None:
     """Idempotent columns/table for create_all + existing DBs (Alembic-free path)."""
-    from sqlalchemy import text
     from database import get_engine
 
     # Prefer SQLModel create for new installs
-    from database.models import SQLModel  # noqa: F401 — AuthToken registered on models import
+    from database.models import (
+        SQLModel,  # noqa: F401 — AuthToken registered on models import
+    )
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
 
     try:
+        # pyrefly: ignore [missing-attribute]
         AuthToken.__table__.create(bind=get_engine(), checkfirst=True)
-    except Exception:
+    except SQLAlchemyError:
         pass
     try:
         with get_engine().begin() as conn:
@@ -65,19 +73,34 @@ def ensure_auth_schema(session) -> None:
             ):
                 try:
                     conn.execute(text(stmt))
-                except Exception:
+                except SQLAlchemyError:
                     # SQLite older dialects may not support IF NOT EXISTS on ADD COLUMN
                     try:
-                        col = "email_verified_at" if "email_verified_at" in stmt else "token_version"
-                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} TIMESTAMP" if col == "email_verified_at" else f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 0"))
-                    except Exception:
+                        col = (
+                            "email_verified_at"
+                            if "email_verified_at" in stmt
+                            else "token_version"
+                        )
+                        if col == "email_verified_at":
+                            conn.execute(
+                                text(
+                                    "ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP"
+                                )
+                            )
+                        else:
+                            conn.execute(
+                                text(
+                                    "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0"
+                                )
+                            )
+                    except SQLAlchemyError:
                         pass
-    except Exception:
+    except SQLAlchemyError:
         pass
 
 
 def assert_rate_limit(session, *, purpose: str, request_key: str) -> None:
-    since = datetime.utcnow() - timedelta(minutes=_RATE_WINDOW_MINUTES)
+    since = _utcnow() - timedelta(minutes=_RATE_WINDOW_MINUTES)
     recent = session.exec(
         select(AuthToken).where(
             AuthToken.purpose == purpose,
@@ -108,7 +131,7 @@ def issue_token(
     assert_rate_limit(session, purpose=purpose, request_key=request_key)
 
     if invalidate_previous:
-        now = datetime.utcnow()
+        now = _utcnow()
         for row in session.exec(
             select(AuthToken).where(
                 AuthToken.user_id == user.user_id,
@@ -126,7 +149,7 @@ def issue_token(
         user_id=user.user_id,  # type: ignore[arg-type]
         purpose=purpose,
         token_hash=hash_token(raw),
-        expires_at=datetime.utcnow() + timedelta(minutes=ttl),
+        expires_at=_utcnow() + timedelta(minutes=ttl),
         request_key=request_key,
     )
     session.add(row)
@@ -135,10 +158,10 @@ def issue_token(
 
 
 def consume_token(session, *, raw_token: str, purpose: Purpose) -> tuple[AuthToken, User]:
-    if not raw_token or not str(raw_token).strip():
+    if not raw_token or not raw_token.strip():
         raise ValidationError("Token is required")
     ensure_auth_schema(session)
-    digest = hash_token(str(raw_token).strip())
+    digest = hash_token(raw_token.strip())
     row = session.exec(
         select(AuthToken).where(
             AuthToken.token_hash == digest,
@@ -149,12 +172,12 @@ def consume_token(session, *, raw_token: str, purpose: Purpose) -> tuple[AuthTok
         raise AppError("Invalid or expired token", 400, "INVALID_TOKEN")
     if row.used_at is not None:
         raise AppError("This link has already been used", 400, "TOKEN_USED")
-    if row.expires_at < datetime.utcnow():
+    if row.expires_at < _utcnow():
         raise AppError("This link has expired", 400, "TOKEN_EXPIRED")
     user = session.get(User, row.user_id)
     if not user or not user.is_active:
         raise AppError("Invalid or expired token", 400, "INVALID_TOKEN")
-    row.used_at = datetime.utcnow()
+    row.used_at = _utcnow()
     session.add(row)
     session.flush()
     return row, user

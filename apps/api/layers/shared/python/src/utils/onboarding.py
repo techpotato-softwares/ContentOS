@@ -15,41 +15,40 @@ ONBOARDING_VERSION = 1
 STEP_KEYS = ("linkedin", "training", "generate", "review", "publish")
 
 
-def ensure_onboarding_schema(session) -> None:
-    """Idempotent ADD COLUMN for local/dev DBs that skip Alembic."""
+def ensure_onboarding_schema(session=None) -> None:
+    """Idempotent ADD COLUMN for local/dev DBs that skip Alembic.
+
+    Uses a separate engine transaction (same pattern as ``ensure_auth_schema``)
+    so DDL is committed even if the request session later rolls back.
+    """
+    from database import get_engine
     from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
 
     try:
-        bind = session.get_bind()
-        dialect = getattr(bind.dialect, "name", "") or ""
-        if dialect == "sqlite":
-            cols = {
-                r[1]
-                for r in session.connection().execute(text("PRAGMA table_info(tenants)")).fetchall()
-            }
-            if "onboarding_json" not in cols:
-                session.connection().execute(
-                    text("ALTER TABLE tenants ADD COLUMN onboarding_json TEXT DEFAULT '{}'")
-                )
-                try:
-                    session.commit()
-                except Exception:
-                    pass
-        else:
-            try:
-                session.connection().execute(
+        with get_engine().begin() as conn:
+            dialect = getattr(conn.dialect, "name", "") or ""
+            if dialect == "sqlite":
+                cols = {
+                    r[1]
+                    for r in conn.execute(text("PRAGMA table_info(tenants)")).fetchall()
+                }
+                if "onboarding_json" not in cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE tenants ADD COLUMN onboarding_json TEXT DEFAULT '{}'"
+                        )
+                    )
+            else:
+                conn.execute(
                     text(
                         "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS "
                         "onboarding_json TEXT NOT NULL DEFAULT '{}'"
                     )
                 )
-                try:
-                    session.commit()
-                except Exception:
-                    pass
-            except Exception:
-                pass
-    except Exception:
+    except SQLAlchemyError:
+        # Best-effort for older SQLite / locked DBs; caller still gets a clear
+        # UndefinedColumn if the column truly cannot be added.
         pass
 
 
@@ -68,7 +67,7 @@ def _parse_iso(raw: Any) -> datetime | None:
         return None
     try:
         return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
-    except Exception:
+    except ValueError:
         return None
 
 
@@ -90,7 +89,7 @@ def parse_onboarding(raw: str | None) -> dict[str, Any]:
         return base
     try:
         data = json.loads(raw)
-    except Exception:
+    except json.JSONDecodeError:
         return base
     if not isinstance(data, dict):
         return base
@@ -152,9 +151,7 @@ def all_steps_complete(state: dict[str, Any]) -> bool:
 def should_show_wizard(state: dict[str, Any]) -> bool:
     if state.get("skipped"):
         return False
-    if state.get("completedAt"):
-        return False
-    return True
+    return not state.get("completedAt")
 
 
 def public_onboarding(state: dict[str, Any]) -> dict[str, Any]:
@@ -174,9 +171,10 @@ def mark_step_complete(state: dict[str, Any], step: str, *, at: datetime | None 
         return parsed
     now = at or _utcnow()
     parsed["steps"][step] = {"status": "completed", "completedAt": _iso(now)}
-    if step == "publish" or all_steps_complete(parsed):
-        if not parsed.get("completedAt"):
-            parsed["completedAt"] = _iso(now)
+    if (step == "publish" or all_steps_complete(parsed)) and not parsed.get(
+        "completedAt"
+    ):
+        parsed["completedAt"] = _iso(now)
     return parsed
 
 
@@ -209,9 +207,10 @@ def apply_put_patch(state: dict[str, Any], patch: dict[str, Any] | None) -> dict
             parsed = mark_step_complete(parsed, key)
             continue
         src = steps_patch.get(key)
-        if isinstance(src, dict) and str(src.get("status") or "").lower() == "completed":
-            parsed = mark_step_complete(parsed, key)
-        elif src is True:
+        if (
+            isinstance(src, dict)
+            and str(src.get("status") or "").lower() == "completed"
+        ) or src is True:
             parsed = mark_step_complete(parsed, key)
     return parsed
 
@@ -264,13 +263,14 @@ def sync_onboarding_from_reality(session, tenant) -> dict[str, Any]:
     accounts = session.exec(
         select(SocialAccount).where(
             SocialAccount.tenant_id == tid,
-            SocialAccount.is_active == True,  # noqa: E712
+            SocialAccount.is_active == True,
         )
     ).all()
-    if any(bool(a.author_urn) for a in accounts):
-        if not is_step_complete(state, "linkedin"):
-            state = mark_step_complete(state, "linkedin")
-            changed = True
+    if any(bool(a.author_urn) for a in accounts) and not is_step_complete(
+        state, "linkedin"
+    ):
+        state = mark_step_complete(state, "linkedin")
+        changed = True
 
     # Training: non-empty pack / version bump / non-default training_json
     training_raw = (tenant.training_json or "").strip()
@@ -279,7 +279,7 @@ def sync_onboarding_from_reality(session, tenant) -> dict[str, Any]:
     ):
         try:
             parsed_training = json.loads(training_raw or "{}")
-        except Exception:
+        except json.JSONDecodeError:
             parsed_training = {}
         has_signal = bool(parsed_training) and any(
             bool(v) for v in parsed_training.values() if not isinstance(v, (dict, list))
@@ -288,10 +288,11 @@ def sync_onboarding_from_reality(session, tenant) -> dict[str, Any]:
             for v in (parsed_training or {}).values()
             if isinstance(v, dict)
         )
-        if has_signal or (tenant.context_pack_version or 0) > 0:
-            if not is_step_complete(state, "training"):
-                state = mark_step_complete(state, "training")
-                changed = True
+        if (
+            has_signal or (tenant.context_pack_version or 0) > 0
+        ) and not is_step_complete(state, "training"):
+            state = mark_step_complete(state, "training")
+            changed = True
 
     batch = session.exec(
         select(GenerationBatch)
