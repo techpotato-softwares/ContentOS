@@ -18,6 +18,18 @@ type RequestOtpResponse = {
   inboxUrl?: string
 }
 
+/** Absolute API origin for full-page OAuth redirects (not relative SPA paths). */
+export function apiOrigin(): string {
+  const raw = (import.meta.env.VITE_API_URL as string | undefined) || ""
+  if (raw) return raw.replace(/\/$/, "")
+  // Dev: leave empty so browser hits Vite proxy (/api → :4001)
+  return ""
+}
+
+export function googleOAuthStartUrl(): string {
+  return `${apiOrigin()}/api/auth/google/start`
+}
+
 export const authApi = createApi({
   reducerPath: "authApi",
   baseQuery: baseQueryWithReauth,
@@ -35,6 +47,17 @@ export const authApi = createApi({
       transformResponse: (r: unknown) => unwrapData<RequestOtpResponse>(r),
     }),
     verifyOtp: build.mutation<LoginResponse, { email: string; code: string }>({
+      query: (body) => ({
+        url: "/api/auth/otp/verify",
+        method: "POST",
+        body: {
+          email: body.email.trim().toLowerCase(),
+          code: body.code.trim(),
+        },
+      }),
+      transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
+    }),
+    exchangeGoogleCode: build.mutation<LoginResponse, { code: string }>({
       query: (body) => ({
         url: "/api/auth/otp/verify",
         method: "POST",
@@ -120,4 +143,9 @@ export const {
   useRegisterMutation,
   useRequestOtpMutation,
   useVerifyOtpMutation,
+  useExchangeGoogleCodeMutation,
+  useRequestEmailVerificationMutation,
+  useConfirmEmailVerificationMutation,
+  useRequestPasswordResetMutation,
+  useConfirmPasswordResetMutation,
 } = authApi
