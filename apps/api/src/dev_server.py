@@ -87,6 +87,67 @@ def pick_handler(path: str):
     return HANDLERS.get(best or "auth", auth_handler)
 
 
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "product": "contentos",
+        "aiProvider": os.environ.get("AI_PROVIDER", "openai"),
+        "openaiKeyConfigured": bool((os.environ.get("OPENAI_API_KEY") or "").strip()),
+    }
+
+
+@app.get("/dev/mailbox")
+def dev_mailbox():
+    """Local OTP inbox UI (IS_LOCAL only)."""
+    if os.environ.get("IS_LOCAL") != "true":
+        return Response(content="Not available", status_code=404)
+    from utils.local_mailbox import extract_otp_codes, list_messages
+    from html import escape
+
+    messages = list_messages(40)
+    cards = []
+    for m in messages:
+        text = m.get("text") or ""
+        codes = extract_otp_codes(text)
+        code_html = (
+            f"<p style='font-size:28px;letter-spacing:4px;font-weight:700'>{escape(codes[0])}</p>"
+            if codes
+            else ""
+        )
+        cards.append(
+            "<article style='border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0'>"
+            f"<div style='color:#666;font-size:12px'>{escape(m.get('createdAt') or '')}</div>"
+            f"<div><strong>To:</strong> {escape(', '.join(m.get('to') or []))}</div>"
+            f"<div><strong>Subject:</strong> {escape(m.get('subject') or '')}</div>"
+            f"{code_html}"
+            f"<pre style='white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px'>"
+            f"{escape(text)}</pre>"
+            "</article>"
+        )
+    body = f"""<!doctype html>
+<html><head><meta charset="utf-8"/><title>ContentOS local mailbox</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>body{{font-family:system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px}}
+a{{color:#0d9488}}</style></head>
+<body>
+<h1>Local OTP mailbox</h1>
+<p>Emails are saved here when <code>EMAIL_TRANSPORT=local</code> (or SES/SMTP unavailable locally).
+Refresh after requesting an OTP. Login: <a href="http://127.0.0.1:5173/login">web app</a></p>
+{''.join(cards) if cards else '<p>No messages yet. Request an OTP from the login page.</p>'}
+</body></html>"""
+    return Response(content=body, media_type="text/html")
+
+
+@app.get("/dev/mailbox.json")
+def dev_mailbox_json():
+    if os.environ.get("IS_LOCAL") != "true":
+        return {"error": "Not available"}
+    from utils.local_mailbox import list_messages
+
+    return {"messages": list_messages(40)}
+
+
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def catch_all(request: Request, full_path: str):
     path = "/" + full_path
@@ -113,13 +174,3 @@ async def catch_all(request: Request, full_path: str):
         headers=headers,
         media_type="application/json",
     )
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "product": "contentos",
-        "aiProvider": os.environ.get("AI_PROVIDER", "openai"),
-        "openaiKeyConfigured": bool((os.environ.get("OPENAI_API_KEY") or "").strip()),
-    }
