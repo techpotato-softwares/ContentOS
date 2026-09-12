@@ -12,7 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 # passlib exposes bcrypt dynamically; getattr keeps runtime + type-checkers happy
-bcrypt = cast(Any, _passlib_hash.bcrypt)
+# pyrefly: ignore [missing-attribute]
+bcrypt = cast(Any, _passlib_hash.bcrypt) 
 
 from database import get_session
 from database.models import Permission, Role, RolePermission, Tenant, User
@@ -34,6 +35,7 @@ from utils.auth_tokens import (
     is_local,
     issue_token,
 )
+from utils.onboarding import ensure_onboarding_schema
 from utils.rate_limit import enforce_auth_rate_limit
 from utils.seed_credentials import reject_seed_login_in_production
 from utils.webtoken import JWTPayload, generate_tokens
@@ -114,6 +116,7 @@ def _user_permissions(session, role_id: int | None) -> tuple[Role | None, list[s
 def _modules_for_tenant(session, tenant_id: int | None) -> list[str]:
     modules = ["platform", "tenants", "agent", "publishing"]
     if tenant_id:
+        ensure_onboarding_schema(session)
         tenant = session.get(Tenant, tenant_id)
         if tenant and tenant.modules_enabled:
             try:
@@ -330,6 +333,7 @@ class AuthController:
         reject_seed_login_in_production(str(username), str(password))
         with get_session() as session:
             ensure_auth_schema(session)
+            ensure_onboarding_schema(session)
             user = session.exec(
                 select(User).where(
                     ((User.username == username) | (User.email == username))
@@ -362,6 +366,7 @@ class AuthController:
         decoded = verify_refresh_token(token)
         with get_session() as session:
             ensure_auth_schema(session)
+            ensure_onboarding_schema(session)
             user_id = decoded.get("userId")
             user = session.get(User, user_id) if user_id is not None else None
             if not user or not user.is_active:
@@ -406,6 +411,7 @@ class AuthController:
         reject_seed_login_in_production(str(email), str(password))
         with get_session() as session:
             try:
+                ensure_onboarding_schema(session)
                 # Pre-checks for clear 409 messages (race still handled via IntegrityError)
                 if session.exec(select(User).where(User.email == email)).first():
                     raise ConflictError(
@@ -679,6 +685,7 @@ class AuthController:
     def me(self, user=None):
         with get_session() as session:
             ensure_auth_schema(session)
+            ensure_onboarding_schema(session)
             row = session.get(User, int((user or {}).get("userId") or 0))
             if not row:
                 return create_success_response({"user": user})
