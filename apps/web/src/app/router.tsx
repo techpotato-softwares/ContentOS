@@ -14,6 +14,8 @@ import { AdminTenantsPage } from "@/features/tenants/AdminTenantsPage"
 import { LinkedInPage } from "@/features/social/LinkedInPage"
 import { InsightsPage } from "@/features/insights/InsightsPage"
 import { AnalyticsPage } from "@/features/insights/AnalyticsPage"
+import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
+import { OnboardingGate } from "@/features/onboarding/OnboardingGate"
 
 function Protected({ children }: { children: React.ReactNode }) {
   const token = useAppSelector((s) => s.auth.accessToken)
@@ -28,16 +30,19 @@ export function AppRouter() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/login/oauth/callback" element={<GoogleOAuthCallbackPage />} />
+        <Route path="/invite/accept" element={<AcceptInvitePage />} />
         <Route
           path="/"
           element={
             <Protected>
+              <OnboardingGate />
               <AppShell />
             </Protected>
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="onboarding" element={<OnboardingPage />} />
           <Route path="agent" element={<AgentPage />} />
           <Route path="insights" element={<InsightsPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />

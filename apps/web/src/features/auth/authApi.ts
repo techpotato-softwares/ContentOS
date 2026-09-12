@@ -59,9 +59,12 @@ export const authApi = createApi({
     }),
     exchangeGoogleCode: build.mutation<LoginResponse, { code: string }>({
       query: (body) => ({
-        url: "/api/auth/google/exchange",
+        url: "/api/auth/otp/verify",
         method: "POST",
-        body: { code: body.code },
+        body: {
+          email: body.email.trim().toLowerCase(),
+          code: body.code.trim(),
+        },
       }),
       transformResponse: (r: unknown) => unwrapData<LoginResponse>(r),
     }),

@@ -4,16 +4,17 @@ import base64
 import io
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 import httpx
-from sqlmodel import select
+from sqlmodel import select, col
 from decorators import Controller, Get, Post
 from decorators.auth_decorators import RequirePermission, RequireModule, ApiPublic
 from database import get_session
 from database.models import ContentPost, SocialAccount
 from middleware.error_handler import NotFoundError, ValidationError, AppError, create_success_response
-from utils.tenant import resolve_tenant_id, write_audit, is_super_admin
+from utils.tenant import resolve_tenant_id, write_audit, is_super_admin, require_user
+from utils.onboarding import complete_onboarding_step
 
 
 MEMBER_SCOPES = "openid profile w_member_social"
@@ -25,6 +26,10 @@ POSTABLE_ORG_ROLES = {
     "CONTENT_ADMIN",
     "DIRECT_SPONSORED_CONTENT_POSTER",
 }
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _ensure_social_account_columns():
@@ -194,7 +199,7 @@ def _store_tokens(
     acct = _get_account(session, tenant_id, account_kind)
     expiry = None
     if tokens.get("expires_in"):
-        expiry = datetime.utcnow() + timedelta(seconds=int(tokens["expires_in"]))
+        expiry = _utcnow() + timedelta(seconds=int(tokens["expires_in"]))
     if not acct:
         acct = SocialAccount(
             tenant_id=tenant_id,
@@ -210,7 +215,7 @@ def _store_tokens(
     )
     acct.token_expiry = expiry
     acct.is_active = is_active
-    acct.updated_at = datetime.utcnow()
+    acct.updated_at = _utcnow()
     if metadata is not None:
         _set_meta(acct, metadata)
     session.add(acct)
@@ -322,6 +327,7 @@ class PublishingController:
     @RequirePermission("tenant:admin", "posts:publish", "admin:tenants")
     def linkedin_connect(self, user=None, query: dict | None = None):
         _ensure_social_account_columns()
+        user = require_user(user)
         cfg = _linkedin_cfg()
         if not cfg["client_id"]:
             raise ValidationError("LINKEDIN_CLIENT_ID not configured")
@@ -458,6 +464,9 @@ class PublishingController:
                     resource_id=str(tid),
                 )
                 session.commit()
+                if author_urn:
+                    complete_onboarding_step(session, tid, "linkedin")
+                    session.commit()
                 loc = cfg["frontend_redirect"] + "?linkedin=connected&mode=member"
 
         return {
@@ -505,6 +514,12 @@ class PublishingController:
                 )
             tokens = _load_tokens(acct)
             access = tokens.get("access_token")
+            if not isinstance(access, str) or not access:
+                raise AppError(
+                    "LinkedIn token missing — reconnect company page",
+                    400,
+                    "LINKEDIN_ORG_NOT_CONNECTED",
+                )
         pages = _list_organization_pages(access)
         return create_success_response({"organizations": pages})
 
@@ -513,6 +528,7 @@ class PublishingController:
     @RequirePermission("tenant:admin", "admin:tenants")
     def linkedin_select_organization(self, data: dict | None = None, user=None):
         _ensure_social_account_columns()
+        user = require_user(user)
         data = data or {}
         tid = _resolve_tid(user, data=data)
         org_id = str(data.get("organizationId") or data.get("id") or "").strip()
@@ -534,12 +550,12 @@ class PublishingController:
             meta["pendingSelection"] = False
             meta["organizationName"] = name
             meta["vanityName"] = vanity
-            meta["selectedAt"] = datetime.utcnow().isoformat() + "Z"
+            meta["selectedAt"] = _utcnow().isoformat() + "Z"
             acct.platform_user_id = org_id
             acct.username = name or f"Org {org_id}"
             acct.author_urn = f"urn:li:organization:{org_id}"
             acct.is_active = True
-            acct.updated_at = datetime.utcnow()
+            acct.updated_at = _utcnow()
             _set_meta(acct, meta)
             session.add(acct)
             write_audit(
@@ -553,6 +569,8 @@ class PublishingController:
             )
             session.commit()
             session.refresh(acct)
+            complete_onboarding_step(session, tid, "linkedin")
+            session.commit()
             return create_success_response(_account_status(acct))
 
     @Post("/social/linkedin/disconnect")
@@ -560,6 +578,7 @@ class PublishingController:
     @RequirePermission("tenant:admin", "posts:publish", "admin:tenants")
     def linkedin_disconnect(self, data: dict | None = None, user=None):
         _ensure_social_account_columns()
+        user = require_user(user)
         data = data or {}
         kind = (data.get("accountKind") or data.get("mode") or "member").strip().lower()
         if kind not in ("member", "organization"):
@@ -579,7 +598,7 @@ class PublishingController:
             acct.token_payload_encrypted = None
             acct.author_urn = None
             acct.platform_user_id = None
-            acct.updated_at = datetime.utcnow()
+            acct.updated_at = _utcnow()
             _set_meta(acct, {})
             session.add(acct)
             write_audit(
@@ -603,7 +622,7 @@ class PublishingController:
             q = select(ContentPost).where(ContentPost.tenant_id == tid)
             if status:
                 q = q.where(ContentPost.status == status)
-            q = q.order_by(ContentPost.created_at.desc())
+            q = q.order_by(col(ContentPost.created_at).desc())
             rows = session.exec(q).all()
             return create_success_response([_post_dict(p) for p in rows])
 
@@ -611,6 +630,7 @@ class PublishingController:
     @RequireModule("publishing")
     @RequirePermission("posts:review", "agent:chat")
     def submit_review(self, id: str, user=None):
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             post = session.get(ContentPost, int(id))
@@ -619,7 +639,7 @@ class PublishingController:
             if post.status not in ("draft", "rejected"):
                 raise ValidationError(f"Cannot submit from status {post.status}")
             post.status = "pending_review"
-            post.updated_at = datetime.utcnow()
+            post.updated_at = _utcnow()
             session.add(post)
             write_audit(
                 session,
@@ -637,6 +657,7 @@ class PublishingController:
     @RequireModule("publishing")
     @RequirePermission("posts:review")
     def approve(self, id: str, user=None):
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             post = session.get(ContentPost, int(id))
@@ -646,8 +667,8 @@ class PublishingController:
                 raise ValidationError(f"Cannot approve from status {post.status}")
             post.status = "approved"
             post.reviewed_by = user["userId"]
-            post.reviewed_at = datetime.utcnow()
-            post.updated_at = datetime.utcnow()
+            post.reviewed_at = _utcnow()
+            post.updated_at = _utcnow()
             session.add(post)
             write_audit(
                 session,
@@ -659,12 +680,15 @@ class PublishingController:
             )
             session.commit()
             session.refresh(post)
+            complete_onboarding_step(session, tid, "review")
+            session.commit()
             return create_success_response(_post_dict(post))
 
     @Post("/posts/{id}/reject")
     @RequireModule("publishing")
     @RequirePermission("posts:review")
     def reject(self, id: str, data: dict | None = None, user=None):
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             post = session.get(ContentPost, int(id))
@@ -672,8 +696,8 @@ class PublishingController:
                 raise NotFoundError("Post not found")
             post.status = "rejected"
             post.reviewed_by = user["userId"]
-            post.reviewed_at = datetime.utcnow()
-            post.updated_at = datetime.utcnow()
+            post.reviewed_at = _utcnow()
+            post.updated_at = _utcnow()
             session.add(post)
             write_audit(
                 session,
@@ -694,6 +718,7 @@ class PublishingController:
     def publish(self, id: str, data: dict | None = None, user=None):
         """Hard gate: only approved posts can be published."""
         _ensure_social_account_columns()
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         data = data or {}
         with get_session() as session:
@@ -701,7 +726,7 @@ class PublishingController:
             from database.models import User as UserModel
 
             ensure_auth_schema(session)
-            actor = session.get(UserModel, int((user or {}).get("userId") or 0))
+            actor = session.get(UserModel, int(user.get("userId") or 0))
             require_email_verified(actor)
             post = session.get(ContentPost, int(id))
             if not post or post.tenant_id != tid:
@@ -714,7 +739,8 @@ class PublishingController:
                 )
             acct, kind = _pick_publish_account(session, tid, data.get("publishAs"))
             tokens = _load_tokens(acct)
-            access = tokens.get("access_token")
+            access_raw = tokens.get("access_token")
+            access = access_raw if isinstance(access_raw, str) else ""
             author_urn = acct.author_urn
             if not author_urn:
                 raise AppError("LinkedIn author URN missing — reconnect", 400, "LINKEDIN_DISCONNECTED")
@@ -765,18 +791,18 @@ class PublishingController:
                 image_for_share = None
                 if fmt == "text" and post.image_url:
                     image_for_share = post.image_url
-                elif fmt == "image" and post.image_url and not str(post.image_url).startswith("data:"):
+                elif fmt == "image" and post.image_url and not post.image_url.startswith("data:"):
                     image_for_share = post.image_url
                 linkedin_id = _linkedin_ugc_publish(
                     access, author_urn, post.caption, image_for_share
                 )
             else:
-                linkedin_id = f"stub-li-{post.post_id}-{int(datetime.utcnow().timestamp())}"
+                linkedin_id = f"stub-li-{post.post_id}-{int(_utcnow().timestamp())}"
 
             post.status = "published"
             post.linkedin_post_id = linkedin_id
-            post.published_at = datetime.utcnow()
-            post.updated_at = datetime.utcnow()
+            post.published_at = _utcnow()
+            post.updated_at = _utcnow()
             session.add(post)
             write_audit(
                 session,
@@ -789,6 +815,9 @@ class PublishingController:
             )
             session.commit()
             session.refresh(post)
+            complete_onboarding_step(session, tid, "review")
+            complete_onboarding_step(session, tid, "publish")
+            session.commit()
             return create_success_response(_post_dict(post))
 
     @Post("/posts/{id}/quick-publish")
@@ -797,6 +826,7 @@ class PublishingController:
     def quick_publish(self, id: str, data: dict | None = None, user=None):
         """One-click: approve (if needed) then publish to LinkedIn — ideal for research text posts."""
         _ensure_social_account_columns()
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         data = data or {}
         with get_session() as session:
@@ -804,7 +834,7 @@ class PublishingController:
             from database.models import User as UserModel
 
             ensure_auth_schema(session)
-            actor = session.get(UserModel, int((user or {}).get("userId") or 0))
+            actor = session.get(UserModel, int(user.get("userId") or 0))
             require_email_verified(actor)
             post = session.get(ContentPost, int(id))
             if not post or post.tenant_id != tid:
@@ -816,8 +846,8 @@ class PublishingController:
             if post.status in ("draft", "pending_review"):
                 post.status = "approved"
                 post.reviewed_by = user["userId"]
-                post.reviewed_at = datetime.utcnow()
-                post.updated_at = datetime.utcnow()
+                post.reviewed_at = _utcnow()
+                post.updated_at = _utcnow()
                 session.add(post)
                 write_audit(
                     session,
@@ -838,6 +868,7 @@ class PublishingController:
     @RequirePermission("posts:review", "posts:publish")
     def schedule_post(self, id: str, data: dict | None = None, user=None):
         """Set or clear scheduled_at / ab_label on a post."""
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         data = data or {}
         with get_session() as session:
@@ -859,7 +890,7 @@ class PublishingController:
             if "abLabel" in data:
                 label = data.get("abLabel")
                 post.ab_label = str(label)[:16] if label else None
-            post.updated_at = datetime.utcnow()
+            post.updated_at = _utcnow()
             session.add(post)
             write_audit(
                 session,

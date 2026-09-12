@@ -3,6 +3,7 @@ import os
 import time
 from dataclasses import dataclass
 from utils.logger import logger
+from utils.app_env import is_production
 from config import get_app_config
 
 @dataclass
@@ -20,30 +21,51 @@ def _local() -> JwtSecrets:
         JWT_REFRESH_SECRET=os.environ.get("JWT_REFRESH_SECRET", "local-dev-refresh-secret-change-me"),
     )
 
+def _from_secrets_manager(secret_id: str, region: str) -> JwtSecrets:
+    import json
+    import boto3
+
+    client = boto3.client("secretsmanager", region_name=region)
+    resp = client.get_secret_value(SecretId=secret_id)
+    data = json.loads(resp["SecretString"])
+    secret = data.get("JWT_SECRET")
+    refresh = data.get("JWT_REFRESH_SECRET")
+    if not secret or not refresh:
+        raise RuntimeError(
+            f"Secret {secret_id} must contain JWT_SECRET and JWT_REFRESH_SECRET"
+        )
+    return JwtSecrets(JWT_SECRET=secret, JWT_REFRESH_SECRET=refresh)
+
 def get_jwt_secrets() -> JwtSecrets:
     global _cache, _expiry
     now = int(time.time() * 1000)
     if _cache and _expiry > now:
         return _cache
     cfg = get_app_config()
+    secret_id = os.environ.get("JWT_SECRET_ID")
+
+    # Production always loads from Secrets Manager (never local env fallbacks).
+    if is_production():
+        if not secret_id:
+            raise RuntimeError("JWT_SECRET_ID must be set when APP_ENV=production")
+        _cache = _from_secrets_manager(secret_id, cfg.region)
+        _expiry = now + _TTL
+        return _cache
+
     if cfg.is_local:
         _cache = _local()
         _expiry = now + _TTL
         return _cache
-    secret_id = os.environ.get("JWT_SECRET_ID")
+
     if not secret_id:
-        if cfg.environment == "prod":
+        if cfg.environment in ("prod", "production"):
             raise RuntimeError("JWT_SECRET_ID must be set in production")
         logger.warn("JWT_SECRET_ID not set, using environment variables")
         _cache = _local()
         _expiry = now + _TTL
         return _cache
-    import json
-    import boto3
-    client = boto3.client("secretsmanager", region_name=cfg.region)
-    resp = client.get_secret_value(SecretId=secret_id)
-    data = json.loads(resp["SecretString"])
-    _cache = JwtSecrets(JWT_SECRET=data["JWT_SECRET"], JWT_REFRESH_SECRET=data["JWT_REFRESH_SECRET"])
+
+    _cache = _from_secrets_manager(secret_id, cfg.region)
     _expiry = now + _TTL
     return _cache
 

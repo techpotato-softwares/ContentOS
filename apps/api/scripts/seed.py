@@ -32,8 +32,8 @@ from database import init_db, get_session
 import database.models  # noqa: F401
 from database.models import Tenant, User, Role, Permission, RolePermission
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
-from datetime import datetime
-from utils.auth_tokens import ensure_auth_schema
+from utils.app_env import is_production
+from utils.seed_credentials import SEED_PASSWORD
 import json
 
 PERMS = [
@@ -200,8 +200,15 @@ def main():
             session.commit()
             session.refresh(demo)
 
-        pwd = bcrypt.hash("ChangeMe123!")
-        now = datetime.utcnow()
+        if is_production():
+            session.commit()
+            print(
+                "ContentOS DB initialized (production): roles/tenants only — "
+                "seed users/passwords are disabled when APP_ENV=production."
+            )
+            return
+
+        pwd = bcrypt.hash(SEED_PASSWORD)
         if not session.exec(select(User).where(User.username == "superadmin")).first():
             session.add(
                 User(
@@ -233,7 +240,7 @@ def main():
                 u.email_verified_at = now
                 session.add(u)
         session.commit()
-    print("ContentOS DB initialized. Users: superadmin / demo  password: ChangeMe123!")
+    print(f"ContentOS DB initialized. Users: superadmin / demo  password: {SEED_PASSWORD}")
 
 
 if __name__ == "__main__":

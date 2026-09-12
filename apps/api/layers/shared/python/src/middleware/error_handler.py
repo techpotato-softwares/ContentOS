@@ -33,6 +33,13 @@ class ForbiddenError(AppError):
     def __init__(self, message: str = "Forbidden"):
         super().__init__(message, 403, "FORBIDDEN")
 
+
+class RateLimitError(AppError):
+    def __init__(self, message: str = "Too many requests", *, retry_after: int | None = 60):
+        super().__init__(message, 429, "RATE_LIMITED")
+        self.retry_after = retry_after
+
+
 def create_success_response(data: Any, status_code: int = 200, meta: dict | None = None) -> dict:
     body: dict[str, Any] = {"success": True, "data": data}
     if meta:
@@ -45,7 +52,10 @@ def create_error_response(error: Exception) -> dict:
     else:
         status, code, message = 500, "INTERNAL_ERROR", str(error) or "Internal server error"
     body = {"success": False, "error": {"code": code, "message": message}}
-    return {"statusCode": status, "headers": {**CORS}, "body": json.dumps(body)}
+    headers = {**CORS}
+    if isinstance(error, RateLimitError) and error.retry_after is not None:
+        headers["Retry-After"] = str(error.retry_after)
+    return {"statusCode": status, "headers": headers, "body": json.dumps(body)}
 
 def handle_options() -> dict:
     return {"statusCode": 204, "headers": {**CORS}, "body": ""}
