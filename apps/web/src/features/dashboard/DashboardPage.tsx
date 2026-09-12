@@ -13,7 +13,7 @@ import {
   Layers,
 } from "lucide-react"
 import { useAppSelector } from "@/app/hooks"
-import { useListPostsQuery } from "@/features/api/contentApi"
+import { useListPostsQuery, useGetOnboardingQuery } from "@/features/api/contentApi"
 import { Button } from "@/components/ui/button"
 import { DashboardOrb } from "@/shared/ui/DashboardOrb"
 import { mediaSrc } from "@/shared/lib/media"
@@ -61,6 +61,7 @@ export function DashboardPage() {
   const user = useAppSelector((s) => s.auth.user)
   const brand = useAppSelector((s) => s.theme.brand)
   const { data: posts = [] } = useListPostsQuery()
+  const { data: onboarding } = useGetOnboardingQuery()
 
   const drafts = posts.filter((p) => p.status === "draft").length
   const pending = posts.filter((p) => p.status === "pending_review").length
@@ -77,6 +78,22 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {onboarding?.showWizard && (
+        <section className="rounded-3xl border border-primary/30 bg-primary/8 p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <h2 className="font-medium">Finish workspace setup</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Connect LinkedIn, train your brand, generate, review, and publish.
+            </p>
+          </div>
+          <Button asChild className="rounded-xl shrink-0">
+            <Link to="/onboarding">
+              Continue setup
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </section>
+      )}
       <section className="relative overflow-hidden rounded-3xl border border-border bg-linear-to-br from-primary/10 via-background/40 to-secondary/15 p-6 md:p-8">
         <div className="pointer-events-none absolute -right-8 top-0 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
         <div className="pointer-events-none absolute -left-10 bottom-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />

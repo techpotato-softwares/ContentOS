@@ -7,7 +7,22 @@ import { store } from "@/app/store"
 import { AppRouter } from "@/app/router"
 import "./index.css"
 
-registerSW({ immediate: true })
+// Explicit SW registration so Chrome can mark the site installable
+// (⋮ menu → Install app on Android Chrome).
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    if (!registration) return
+    // Periodically check for updates while the tab is open.
+    setInterval(() => {
+      void registration.update()
+    }, 60 * 60 * 1000)
+  },
+  onRegisterError(error) {
+    // Site must still work without SW (offline installability may be unavailable).
+    console.warn("[PWA] Service worker registration failed:", error)
+  },
+})
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

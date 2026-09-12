@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { appLoginUrl } from "@/lib/appUrl";
 
 const columns = [
   {
@@ -22,7 +23,7 @@ const columns = [
     links: [
       { href: "/about", label: "About" },
       { href: "/contact", label: "Contact" },
-      { href: "/contact", label: "Book a demo" },
+      { href: appLoginUrl(), label: "Start Free" },
     ],
   },
 ];
@@ -39,30 +40,38 @@ export function Footer() {
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute -top-24 left-1/2 h-48 w-[28rem] -translate-x-1/2 rounded-full bg-accent/10 blur-3xl"
+        className="pointer-events-none absolute -top-24 left-1/2 h-56 w-[32rem] -translate-x-1/2 rounded-full bg-accent/12 blur-3xl"
         aria-hidden
       />
-      <div className="section-inner relative px-5 py-16 md:px-6">
-        <div className="mid-cta-band mb-12 px-6 py-8 md:flex md:items-center md:justify-between md:px-8">
+      <div className="section-inner relative px-5 py-16 md:px-6 md:py-20">
+        <div className="mid-cta-band mb-14 px-6 py-9 md:flex md:items-center md:justify-between md:px-10 md:py-11">
           <div>
-            <p className="display text-2xl text-ink md:text-3xl">Ready to ship on-brand?</p>
-            <p className="mt-2 max-w-md text-sm text-steel">
-              Book a demo and see ContentOS train, generate, review, and publish in one loop.
+            <p className="eyebrow">Ready when you are</p>
+            <p className="display mt-2 text-2xl text-ink md:text-3xl">
+              Ship on-brand LinkedIn this week.
+            </p>
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-steel">
+              Start free — train, generate, review, and publish in one loop.
             </p>
           </div>
-          <Link href="/contact" className="btn-primary btn-demo mt-5 inline-flex md:mt-0">
-            Book a demo
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-3 md:mt-0">
+            <Link href={appLoginUrl()} className="btn-primary btn-demo inline-flex">
+              Start Free
+            </Link>
+            <Link href="/product" className="btn-secondary inline-flex">
+              See product
+            </Link>
+          </div>
         </div>
 
-        <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+        <div className="grid gap-12 md:grid-cols-[1.45fr_1fr_1fr_1fr] md:gap-10">
           <div>
             <Link href="/" className="display text-2xl text-ink">
               Content<span className="text-accent">OS</span>
             </Link>
-            <p className="mt-3 max-w-sm text-sm leading-relaxed text-steel">
-              LinkedIn content on autopilot — without losing your voice. Built by TechPotato Softwares
-              LLP.
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-steel">
+              LinkedIn content on autopilot — without losing your voice. Built by TechPotato
+              Softwares LLP.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <span className="trust-chip">
@@ -74,30 +83,20 @@ export function Footer() {
                 Multi-tenant
               </span>
             </div>
-            <form className="mt-6 flex max-w-sm gap-2" action="/contact">
-              <label htmlFor="newsletter" className="sr-only">
-                Email for updates
-              </label>
-              <input
-                id="newsletter"
-                name="email"
-                type="email"
-                placeholder="Work email"
-                className="field-input min-w-0 flex-1 !py-2.5"
-              />
-              <button type="submit" className="btn-primary !px-3 !py-2.5 !text-sm">
-                Subscribe
-              </button>
-            </form>
           </div>
 
           {columns.map((col) => (
             <div key={col.title}>
-              <p className="text-sm font-semibold text-ink">{col.title}</p>
-              <ul className="mt-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent/80">
+                {col.title}
+              </p>
+              <ul className="mt-4 space-y-2.5">
                 {col.links.map((link) => (
                   <li key={`${col.title}-${link.label}`}>
-                    <Link href={link.href} className="text-sm text-steel transition hover:text-ink">
+                    <Link
+                      href={link.href}
+                      className="text-sm text-steel transition hover:text-ink"
+                    >
                       {link.label}
                     </Link>
                   </li>
@@ -107,9 +106,9 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-col gap-2 border-t border-[var(--line)] pt-6 text-sm text-steel md:flex-row md:items-center md:justify-between">
+        <div className="mt-14 flex flex-col gap-2 border-t border-[var(--line)] pt-7 text-sm text-steel md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} TechPotato Softwares LLP. All rights reserved.</p>
-          <p>LinkedIn content operating system for teams.</p>
+          <p className="text-ink-soft/70">LinkedIn content operating system for teams.</p>
         </div>
       </div>
     </footer>

@@ -13,12 +13,14 @@ import {
   Lightbulb,
   BarChart3,
   MoreHorizontal,
+  Users,
+  Rocket,
   type LucideIcon,
 } from "lucide-react"
 import { useAppDispatch, useAppSelector } from "@/app/hooks"
 import { logout } from "@/features/auth/authSlice"
 import { setColorMode, setBrand } from "@/app/theme/themeSlice"
-import { useGetThemeQuery, type ThemePayload } from "@/features/api/contentApi"
+import { useGetThemeQuery, useGetOnboardingQuery, type ThemePayload } from "@/features/api/contentApi"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/shared/lib/utils"
@@ -38,6 +40,8 @@ const links: NavItem[] = [
   { to: "/review", label: "Review", icon: ClipboardCheck },
   { to: "/connections/linkedin", label: "LinkedIn", icon: Share2 },
   { to: "/settings/training", label: "Training", icon: Palette },
+  { to: "/settings/team", label: "Team", icon: Users },
+  { to: "/onboarding", label: "Setup", icon: Rocket },
   { to: "/admin/tenants", label: "Tenants", icon: Building2, admin: true },
 ]
 
@@ -124,6 +128,7 @@ export function AppShell() {
   const colorMode = useAppSelector((s) => s.theme.colorMode)
   const brand = useAppSelector((s) => s.theme.brand)
   const { data: theme } = useGetThemeQuery(undefined, { skip: !user })
+  const { data: onboarding } = useGetOnboardingQuery(undefined, { skip: !user })
   const isWorkspace = location.pathname === "/agent"
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -142,7 +147,11 @@ export function AppShell() {
   const isAdmin =
     user?.roleName === "super_admin" || user?.permissions?.includes("admin:tenants")
   const title = brand?.appDisplayName || "ContentOS"
-  const visibleLinks = links.filter((l) => !l.admin || isAdmin)
+  const visibleLinks = links.filter((l) => {
+    if (l.admin && !isAdmin) return false
+    if (l.to === "/onboarding" && !onboarding?.showWizard) return false
+    return true
+  })
   const primaryTabs = visibleLinks.filter((l) => primaryTabPaths.has(l.to))
   const moreLinks = visibleLinks.filter((l) => !primaryTabPaths.has(l.to))
   const moreActive = moreLinks.some(
@@ -233,7 +242,7 @@ export function AppShell() {
 
         <main
           className={cn(
-            "relative flex-1 p-3 min-w-0",
+            "relative flex-1 p-2.5 sm:p-3 min-w-0",
             "pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:pb-3",
             isWorkspace && "min-h-0 flex flex-col",
           )}
@@ -243,7 +252,7 @@ export function AppShell() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
             className={cn(
-              "glass-panel rounded-3xl p-4 md:p-6 shadow-elevated",
+              "glass-panel rounded-3xl p-3 sm:p-4 md:p-6 shadow-elevated",
               isWorkspace
                 ? "flex-1 min-h-0 overflow-hidden flex flex-col md:h-[calc(100dvh-1.5rem)]"
                 : "min-h-0 md:min-h-[calc(100dvh-1.5rem)] overflow-visible",

@@ -11,13 +11,17 @@ import "./globals.css";
 const syne = Syne({
   subsets: ["latin"],
   variable: "--font-syne",
-  weight: ["500", "600", "700", "800"],
+  weight: ["600", "700"],
+  display: "swap",
+  preload: true,
 });
 
 const ibmPlex = IBM_Plex_Sans({
   subsets: ["latin"],
   variable: "--font-ibm",
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600"],
+  display: "swap",
+  preload: true,
 });
 
 export const metadata: Metadata = {

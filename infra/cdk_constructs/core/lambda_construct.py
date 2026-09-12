@@ -82,6 +82,7 @@ class LambdaConstruct(Construct):
     ) -> lambda_.Function:
         environment: dict[str, str] = {
             "ENVIRONMENT": config.environment,
+            "APP_ENV": "production" if config.environment == "prod" else config.environment,
             "APP_NAME": os.environ.get("APP_NAME", "contentos"),
             "DB_HOST": self._db_host,
             "DB_PORT": str(config.database.port),
@@ -103,7 +104,23 @@ class LambdaConstruct(Construct):
             "GEMINI_MODEL": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             "LINKEDIN_REDIRECT_URI": os.environ.get("LINKEDIN_REDIRECT_URI", ""),
             "LINKEDIN_FRONTEND_REDIRECT": os.environ.get("LINKEDIN_FRONTEND_REDIRECT", ""),
+            "FRONTEND_URL": os.environ.get("FRONTEND_URL", ""),
+            "SES_ENABLED": os.environ.get("SES_ENABLED", "false"),
+            "SES_FROM_EMAIL": os.environ.get(
+                "SES_FROM_EMAIL", os.environ.get("FROM_EMAIL", "")
+            ),
+            "FROM_EMAIL": os.environ.get(
+                "FROM_EMAIL", os.environ.get("SES_FROM_EMAIL", "")
+            ),
         }
+        # Optional auth rate-limit backends (Redis preferred; else Dynamo table name).
+        if os.environ.get("REDIS_URL"):
+            environment["REDIS_URL"] = os.environ["REDIS_URL"]
+        rate_table = os.environ.get("RATE_LIMIT_TABLE") or os.environ.get(
+            "AUTH_RATE_LIMIT_TABLE"
+        )
+        if rate_table:
+            environment["RATE_LIMIT_TABLE"] = rate_table
         if config.environment == "dev":
             environment.update(_load_local_env_vars())
 

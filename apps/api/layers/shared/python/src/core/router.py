@@ -16,7 +16,13 @@ PUBLIC = {
     ("POST", "/api/auth/otp/request"),
     ("POST", "/api/auth/otp/verify"),
     ("POST", "/api/register"),
+    ("POST", "/api/auth/verify-email/request"),
+    ("POST", "/api/auth/verify-email/confirm"),
+    ("POST", "/api/auth/password-reset/request"),
+    ("POST", "/api/auth/password-reset/confirm"),
     ("GET", "/api/social/linkedin/callback"),
+    ("GET", "/api/tenants/invites/preview"),
+    ("POST", "/api/tenants/invites/accept"),
 }
 
 class Router:

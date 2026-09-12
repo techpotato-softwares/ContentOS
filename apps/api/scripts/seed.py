@@ -32,6 +32,8 @@ from database import init_db, get_session
 import database.models  # noqa: F401
 from database.models import Tenant, User, Role, Permission, RolePermission
 from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
+from utils.app_env import is_production
+from utils.seed_credentials import SEED_PASSWORD
 import json
 
 PERMS = [
@@ -119,6 +121,7 @@ def main():
     except Exception:
         pass
     with get_session() as session:
+        ensure_auth_schema(session)
         perm_map: dict[str, int] = {}
         for code, name in PERMS:
             existing = session.exec(select(Permission).where(Permission.permission_code == code)).first()
@@ -197,7 +200,15 @@ def main():
             session.commit()
             session.refresh(demo)
 
-        pwd = bcrypt.hash("ChangeMe123!")
+        if is_production():
+            session.commit()
+            print(
+                "ContentOS DB initialized (production): roles/tenants only — "
+                "seed users/passwords are disabled when APP_ENV=production."
+            )
+            return
+
+        pwd = bcrypt.hash(SEED_PASSWORD)
         if not session.exec(select(User).where(User.username == "superadmin")).first():
             session.add(
                 User(
@@ -206,6 +217,8 @@ def main():
                     password=pwd,
                     role_id=role_map["super_admin"],
                     tenant_id=platform.tenant_id,
+                    email_verified_at=now,
+                    token_version=0,
                 )
             )
         if not session.exec(select(User).where(User.username == "demo")).first():
@@ -216,10 +229,18 @@ def main():
                     password=pwd,
                     role_id=role_map["tenant_admin"],
                     tenant_id=demo.tenant_id,
+                    email_verified_at=now,
+                    token_version=0,
                 )
             )
+        # Ensure existing seed users can publish locally
+        for uname in ("superadmin", "demo"):
+            u = session.exec(select(User).where(User.username == uname)).first()
+            if u and not u.email_verified_at:
+                u.email_verified_at = now
+                session.add(u)
         session.commit()
-    print("ContentOS DB initialized. Users: superadmin / demo  password: ChangeMe123!")
+    print(f"ContentOS DB initialized. Users: superadmin / demo  password: {SEED_PASSWORD}")
 
 
 if __name__ == "__main__":

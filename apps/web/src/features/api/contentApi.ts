@@ -1,6 +1,7 @@
 import { createApi } from "@reduxjs/toolkit/query/react"
 import { baseQueryWithReauth, unwrapData } from "@/shared/lib/apiBase"
 import type { TenantTrainingSchema } from "@/shared/types/training"
+import type { OnboardingState } from "@/features/onboarding/onboardingState"
 
 export type ThemePayload = {
   source: "platform" | "tenant"
@@ -20,6 +21,69 @@ export type TenantRow = {
   primaryColor?: string
   secondaryColor?: string
   accentColor?: string
+}
+
+export type TenantInviteRow = {
+  inviteId: number
+  email: string
+  role: string
+  status: string
+  expiresAt?: string | null
+  invitedBy?: number | null
+  tenantId?: number
+  tenantName?: string | null
+  createdAt?: string | null
+  acceptedAt?: string | null
+}
+
+export type TenantInvitePreview = {
+  email: string
+  role: string
+  expiresAt?: string | null
+  tenantName?: string | null
+  status: string
+}
+
+export type TenantInviteAcceptResult = {
+  accepted: boolean
+  registered?: boolean
+  tenantId?: number
+  role?: string
+  accessToken: string
+  refreshToken: string
+  user: {
+    userId: number
+    username: string
+    email?: string | null
+    roleName?: string | null
+    tenantId?: number | null
+    permissions?: string[]
+    modulesEnabled?: string[]
+    emailVerified?: boolean
+  }
+}
+
+export type AiSettingsPayload = {
+  aiBillingMode: "platform" | "byok" | string
+  planTier: string
+  byokAllowed: boolean
+  quota: {
+    monthlyLimit: number
+    usedThisMonth: number
+    month: string
+    remaining: number
+  }
+  keys: {
+    openaiConfigured: boolean
+    geminiConfigured: boolean
+  }
+  plans: Array<{
+    id: string
+    label: string
+    monthlyUsd: number
+    quota: number
+    byokAllowed: boolean
+  }>
 }
 
 export type ContentPost = {
@@ -233,12 +297,139 @@ export type AnalyticsInsights = {
 export const contentApi = createApi({
   reducerPath: "contentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Theme", "Training", "Tenants", "Posts", "LinkedIn", "Batch", "Sessions", "Insights"],
+  tagTypes: [
+    "Theme",
+    "Training",
+    "Onboarding",
+    "Tenants",
+    "TenantInvites",
+    "Posts",
+    "LinkedIn",
+    "Batch",
+    "Sessions",
+    "Insights",
+    "Billing",
+    "AiSettings",
+  ],
   endpoints: (build) => ({
     getTheme: build.query<ThemePayload, void>({
       query: () => "/api/tenants/me/theme",
       transformResponse: (r: unknown) => unwrapData<ThemePayload>(r),
       providesTags: ["Theme"],
+    }),
+    getOnboarding: build.query<OnboardingState, void>({
+      query: () => "/api/tenants/me/onboarding",
+      transformResponse: (r: unknown) => unwrapData<OnboardingState>(r),
+      providesTags: ["Onboarding"],
+    }),
+    putOnboarding: build.mutation<
+      OnboardingState,
+      {
+        skipped?: boolean
+        skip?: boolean
+        reopen?: boolean
+        linkedin?: boolean
+        training?: boolean
+        generate?: boolean
+        review?: boolean
+        publish?: boolean
+        steps?: Partial<
+          Record<
+            "linkedin" | "training" | "generate" | "review" | "publish",
+            boolean | { status: "completed" | "pending" }
+          >
+        >
+      }
+    >({
+      query: (body) => ({ url: "/api/tenants/me/onboarding", method: "PUT", body }),
+      transformResponse: (r: unknown) => unwrapData<OnboardingState>(r),
+      invalidatesTags: ["Onboarding"],
+    }),
+    createCheckoutSession: build.mutation<
+      { url: string; sessionId: string },
+      { planTier: string; successUrl?: string; cancelUrl?: string }
+    >({
+      query: (body) => ({ url: "/api/billing/checkout-session", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    createPortalSession: build.mutation<{ url: string }, void>({
+      query: () => ({ url: "/api/billing/portal-session", method: "POST", body: {} }),
+      transformResponse: (r: unknown) => unwrapData(r),
+    }),
+    getBillingSummary: build.query<
+      {
+        planTier: string
+        planLabel: string
+        monthlyUsd: number
+        monthlyInr: number
+        billingStatus: string
+        billingGateway?: string | null
+        aiBillingMode: string
+        byok: boolean
+        hasSubscription: boolean
+        hasStripeCustomer: boolean
+        hasRazorpaySubscription: boolean
+        quota: { used: number; limit: number; month?: string }
+        plans: Array<{
+          id: string
+          label: string
+          monthlyUsd: number
+          monthlyInr: number
+          quota: number
+          byokAllowed: boolean
+        }>
+      },
+      { currency?: "usd" | "inr" } | void
+    >({
+      query: (arg) => {
+        const currency =
+          arg && typeof arg === "object" && arg.currency ? arg.currency : undefined
+        return currency
+          ? `/api/billing/summary?currency=${currency}`
+          : "/api/billing/summary"
+      },
+      transformResponse: (r: unknown) => unwrapData(r),
+      providesTags: ["Billing"],
+    }),
+    createRazorpaySubscription: build.mutation<
+      { url: string; subscriptionId?: string },
+      { planTier: string }
+    >({
+      query: (body) => ({
+        url: "/api/billing/razorpay/subscription",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Billing"],
+    }),
+    cancelRazorpaySubscription: build.mutation<{ canceled: boolean }, Record<string, never> | void>({
+      query: (body) => ({
+        url: "/api/billing/razorpay/cancel",
+        method: "POST",
+        body: body || {},
+      }),
+      transformResponse: (r: unknown) => unwrapData(r),
+      invalidatesTags: ["Billing"],
+    }),
+    getAiSettings: build.query<AiSettingsPayload, void>({
+      query: () => "/api/tenants/me/ai-settings",
+      transformResponse: (r: unknown) => unwrapData<AiSettingsPayload>(r),
+      providesTags: ["AiSettings"],
+    }),
+    putAiSettings: build.mutation<
+      AiSettingsPayload,
+      {
+        aiBillingMode?: "platform" | "byok"
+        openaiApiKey?: string
+        geminiApiKey?: string
+        clearOpenai?: boolean
+        clearGemini?: boolean
+      }
+    >({
+      query: (body) => ({ url: "/api/tenants/me/ai-settings", method: "PUT", body }),
+      transformResponse: (r: unknown) => unwrapData<AiSettingsPayload>(r),
+      invalidatesTags: ["AiSettings", "Billing"],
     }),
     listTenants: build.query<TenantRow[], void>({
       query: () => "/api/admin/tenants",
@@ -249,6 +440,44 @@ export const contentApi = createApi({
       query: (body) => ({ url: "/api/admin/tenants", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData<TenantRow>(r),
       invalidatesTags: ["Tenants"],
+    }),
+    listTenantInvites: build.query<{ invites: TenantInviteRow[] }, void>({
+      query: () => "/api/tenants/invites",
+      transformResponse: (r: unknown) => unwrapData<{ invites: TenantInviteRow[] }>(r),
+      providesTags: ["TenantInvites"],
+    }),
+    createTenantInvite: build.mutation<
+      { invite: TenantInviteRow; emailSent: boolean; emailReason?: string },
+      { email: string; role?: "tenant_member" | "tenant_admin" }
+    >({
+      query: (body) => ({ url: "/api/tenants/invites", method: "POST", body }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ invite: TenantInviteRow; emailSent: boolean; emailReason?: string }>(r),
+      invalidatesTags: ["TenantInvites"],
+    }),
+    revokeTenantInvite: build.mutation<
+      { invite: TenantInviteRow; revoked: boolean },
+      number
+    >({
+      query: (inviteId) => ({
+        url: `/api/tenants/invites/${inviteId}`,
+        method: "DELETE",
+      }),
+      transformResponse: (r: unknown) =>
+        unwrapData<{ invite: TenantInviteRow; revoked: boolean }>(r),
+      invalidatesTags: ["TenantInvites"],
+    }),
+    previewTenantInvite: build.query<TenantInvitePreview, string>({
+      query: (token) => `/api/tenants/invites/preview?token=${encodeURIComponent(token)}`,
+      transformResponse: (r: unknown) => unwrapData<TenantInvitePreview>(r),
+    }),
+    acceptTenantInvite: build.mutation<
+      TenantInviteAcceptResult,
+      { token: string; username?: string; email?: string; password?: string }
+    >({
+      query: (body) => ({ url: "/api/tenants/invites/accept", method: "POST", body }),
+      transformResponse: (r: unknown) => unwrapData<TenantInviteAcceptResult>(r),
+      invalidatesTags: ["TenantInvites"],
     }),
     getTraining: build.query<TenantTrainingSchema, number | void>({
       query: (tenantId) =>
@@ -269,7 +498,7 @@ export const contentApi = createApi({
         method: "PUT",
         body,
       }),
-      invalidatesTags: ["Training", "Theme"],
+      invalidatesTags: ["Training", "Theme", "Onboarding"],
     }),
     uploadLogo: build.mutation<
       { logoUrl: string; training?: TenantTrainingSchema },
@@ -283,7 +512,7 @@ export const contentApi = createApi({
         body: tenantId ? { ...body, tenantId } : body,
       }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Training", "Theme"],
+      invalidatesTags: ["Training", "Theme", "Onboarding"],
     }),
     deleteLogo: build.mutation<{ deleted: boolean }, number | void>({
       query: (tenantId) => ({
@@ -362,7 +591,7 @@ export const contentApi = createApi({
     >({
       query: (body) => ({ url: "/api/agent/generate", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts", "Sessions"],
+      invalidatesTags: ["Posts", "Sessions", "Onboarding"],
     }),
     scorePost: build.mutation<ContentPost, number>({
       query: (id) => ({ url: `/api/agent/posts/${id}/score`, method: "POST" }),
@@ -396,7 +625,7 @@ export const contentApi = createApi({
     >({
       query: (body) => ({ url: "/api/agent/repurpose", method: "POST", body }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts", "Sessions"],
+      invalidatesTags: ["Posts", "Sessions", "Onboarding"],
     }),
     abSchedule: build.mutation<AbScheduleResult, { batchId: number; apply?: boolean }>({
       query: ({ batchId, apply }) => ({
@@ -463,7 +692,7 @@ export const contentApi = createApi({
     approvePost: build.mutation<ContentPost, number>({
       query: (id) => ({ url: `/api/posts/${id}/approve`, method: "POST" }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts"],
+      invalidatesTags: ["Posts", "Onboarding"],
     }),
     rejectPost: build.mutation<ContentPost, number>({
       query: (id) => ({ url: `/api/posts/${id}/reject`, method: "POST", body: {} }),
@@ -481,7 +710,7 @@ export const contentApi = createApi({
         return { url: `/api/posts/${id}/publish`, method: "POST", body }
       },
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts"],
+      invalidatesTags: ["Posts", "Onboarding"],
     }),
     quickPublishPost: build.mutation<
       ContentPost,
@@ -494,7 +723,7 @@ export const contentApi = createApi({
         return { url: `/api/posts/${id}/quick-publish`, method: "POST", body }
       },
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["Posts"],
+      invalidatesTags: ["Posts", "Onboarding"],
     }),
     linkedInStatus: build.query<LinkedInStatus, { tenantId?: number } | void>({
       query: (arg) => {
@@ -548,7 +777,7 @@ export const contentApi = createApi({
         body,
       }),
       transformResponse: (r: unknown) => unwrapData(r),
-      invalidatesTags: ["LinkedIn"],
+      invalidatesTags: ["LinkedIn", "Onboarding"],
     }),
     linkedInDisconnect: build.mutation<
       { disconnected: boolean; accountKind: string },
@@ -567,8 +796,22 @@ export const contentApi = createApi({
 
 export const {
   useGetThemeQuery,
+  useGetOnboardingQuery,
+  usePutOnboardingMutation,
+  useCreateCheckoutSessionMutation,
+  useCreatePortalSessionMutation,
+  useGetBillingSummaryQuery,
+  useCreateRazorpaySubscriptionMutation,
+  useCancelRazorpaySubscriptionMutation,
+  useGetAiSettingsQuery,
+  usePutAiSettingsMutation,
   useListTenantsQuery,
   useCreateTenantMutation,
+  useListTenantInvitesQuery,
+  useCreateTenantInviteMutation,
+  useRevokeTenantInviteMutation,
+  usePreviewTenantInviteQuery,
+  useAcceptTenantInviteMutation,
   useGetTrainingQuery,
   usePutTrainingMutation,
   useUploadLogoMutation,

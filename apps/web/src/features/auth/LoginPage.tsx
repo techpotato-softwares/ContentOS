@@ -11,6 +11,7 @@ import { setSession } from "@/features/auth/authSlice"
 import { useAppDispatch } from "@/app/hooks"
 import { Button } from "@/components/ui/button"
 import { Input, Label } from "@/components/ui/input"
+import { cn } from "@/shared/lib/utils"
 
 function apiErrorMessage(err: unknown): string | undefined {
   if (!err || typeof err !== "object") return undefined
@@ -45,6 +46,7 @@ export function LoginPage() {
   const [otpStep, setOtpStep] = useState<OtpStep>("email")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [otpCode, setOtpCode] = useState("")
   const [companyName, setCompanyName] = useState("")
@@ -251,14 +253,62 @@ export function LoginPage() {
                 autoComplete="organization"
               />
             </div>
-            <div className="space-y-1">
-              <Label>Work email</Label>
+
+            <AnimatePresence mode="wait" initial={false}>
+              {isRegister && (
+                <motion.div
+                  key="register-fields"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="space-y-4 overflow-hidden"
+                >
+                  <div className="space-y-1.5">
+                    <Label htmlFor="company" className="text-[#c5dbd2]">
+                      Company name
+                    </Label>
+                    <Input
+                      id="company"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      placeholder="Acme Cloud"
+                      required={isRegister}
+                      autoComplete="organization"
+                      className="auth-field"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="email" className="text-[#c5dbd2]">
+                      Work email
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      required={isRegister}
+                      autoComplete="email"
+                      className="auth-field"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="username" className="text-[#c5dbd2]">
+                Username
+              </Label>
               <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder={isRegister ? "choose a username" : "username or email"}
                 required
-                autoComplete="email"
+                autoComplete="username"
+                className="auth-field"
               />
             </div>
             <div className="space-y-1">

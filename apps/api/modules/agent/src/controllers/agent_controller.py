@@ -1,13 +1,14 @@
 from __future__ import annotations
 import json
-from datetime import datetime
-from sqlmodel import select
+from datetime import datetime, timezone
+from sqlmodel import select, col
 from decorators import Controller, Get, Post
 from decorators.auth_decorators import RequirePermission, RequireModule
 from database import get_session
 from database.models import Tenant, ChatSession, ChatMessage, GenerationBatch, ContentPost, TrainingDocument
 from middleware.error_handler import NotFoundError, ValidationError, create_success_response
-from utils.tenant import resolve_tenant_id, write_audit
+from utils.tenant import resolve_tenant_id, write_audit, require_user
+from utils.onboarding import complete_onboarding_step
 from training.schema import parse_training, render_context_pack, DocumentRef
 from modules.agent.src.providers import get_provider, upload_tenant_image, enrich_image_prompt, ANGLES, list_text_providers
 from modules.agent.src.post_schema import (
@@ -26,6 +27,10 @@ from modules.agent.src.image_providers import (
     get_image_provider,
     nearest_gen_size,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _ensure_layout_column():
@@ -145,7 +150,7 @@ def _session_artifacts(session, *, tid: int, session_id: int) -> dict:
             GenerationBatch.tenant_id == tid,
             GenerationBatch.session_id == session_id,
         )
-        .order_by(GenerationBatch.created_at.asc())
+        .order_by(col(GenerationBatch.created_at).asc())
     ).all()
     if not batches:
         return {"batchId": None, "posts": [], "batches": []}
@@ -159,7 +164,7 @@ def _session_artifacts(session, *, tid: int, session_id: int) -> dict:
                 ContentPost.tenant_id == tid,
                 ContentPost.batch_id == b.batch_id,
             )
-            .order_by(ContentPost.post_id)
+            .order_by(col(ContentPost.post_id))
         ).all()
         post_dicts = [_post_dict(p) for p in posts]
         all_posts.extend(post_dicts)
@@ -239,6 +244,7 @@ class AgentController:
     @RequireModule("agent")
     @RequirePermission("agent:chat")
     def create_session(self, data: dict, user=None):
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         title = (data or {}).get("title") or "New chat"
         with get_session() as session:
@@ -254,12 +260,13 @@ class AgentController:
     @RequireModule("agent")
     @RequirePermission("agent:chat")
     def list_sessions(self, user=None):
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             rows = session.exec(
                 select(ChatSession)
                 .where(ChatSession.tenant_id == tid, ChatSession.user_id == user["userId"])
-                .order_by(ChatSession.updated_at.desc())
+                .order_by(col(ChatSession.updated_at).desc())
             ).all()
             return create_success_response(
                 [
@@ -276,15 +283,18 @@ class AgentController:
     @RequireModule("agent")
     @RequirePermission("agent:chat")
     def get_messages(self, sessionId: str, user=None):
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             cs = session.get(ChatSession, int(sessionId))
             if not cs or cs.tenant_id != tid or cs.user_id != user["userId"]:
                 raise NotFoundError("Chat session not found")
+            if cs.session_id is None:
+                raise NotFoundError("Chat session not found")
             rows = session.exec(
                 select(ChatMessage)
                 .where(ChatMessage.session_id == cs.session_id, ChatMessage.tenant_id == tid)
-                .order_by(ChatMessage.created_at)
+                .order_by(col(ChatMessage.created_at))
             ).all()
             artifacts = _session_artifacts(session, tid=tid, session_id=cs.session_id)
             return create_success_response(
@@ -336,6 +346,7 @@ class AgentController:
         message = ((data or {}).get("message") or "").strip()
         if not message:
             raise ValidationError("message is required")
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         session_id = (data or {}).get("sessionId")
         with get_session() as session:
@@ -347,11 +358,16 @@ class AgentController:
                 session.add(cs)
                 session.commit()
                 session.refresh(cs)
+                if cs.session_id is None:
+                    raise ValidationError("Failed to create chat session")
                 session_id = cs.session_id
             else:
                 cs = session.get(ChatSession, int(session_id))
                 if not cs or cs.tenant_id != tid:
                     raise NotFoundError("Chat session not found")
+                if cs.session_id is None:
+                    raise NotFoundError("Chat session not found")
+                session_id = cs.session_id
 
             session.add(
                 ChatMessage(
@@ -364,7 +380,7 @@ class AgentController:
             history_rows = session.exec(
                 select(ChatMessage)
                 .where(ChatMessage.session_id == session_id)
-                .order_by(ChatMessage.created_at)
+                .order_by(col(ChatMessage.created_at))
             ).all()
             history = [{"role": m.role, "content": m.content} for m in history_rows if m.role in ("user", "assistant")]
             pack = _load_context_pack(session, tenant)
@@ -379,7 +395,7 @@ class AgentController:
                     content=reply,
                 )
             )
-            cs.updated_at = datetime.utcnow()
+            cs.updated_at = _utcnow()
             session.add(cs)
             session.commit()
             return create_success_response(
@@ -417,6 +433,7 @@ class AgentController:
             render_mode = "template"
         image_model = data.get("imageModel")
         ai_name = (data.get("aiProvider") or data.get("textProvider") or "").strip() or None
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         session_id = data.get("sessionId")
         source_type = (data.get("sourceType") or "brief").strip()
@@ -436,6 +453,8 @@ class AgentController:
                 session_id=session_id,
                 title=title_seed[:60],
             )
+            if cs.session_id is None:
+                raise ValidationError("Chat session missing id")
             session_id = cs.session_id
 
             training = parse_training(tenant.training_json)
@@ -463,7 +482,7 @@ class AgentController:
             batch = GenerationBatch(
                 tenant_id=tid,
                 user_id=user["userId"],
-                session_id=int(session_id),
+                session_id=session_id,
                 user_brief=brief,
                 status="completed",
             )
@@ -520,6 +539,8 @@ class AgentController:
                         source_ref=source_ref,
                     )
                 elif post_format == "carousel":
+                    if img_provider is None or gen_size is None:
+                        raise ValidationError("Image generation is not configured")
                     slide_layouts = []
                     cover_url = None
                     for slide in plan.slides[:8]:
@@ -585,6 +606,8 @@ class AgentController:
                         source_ref=source_ref,
                     )
                 else:
+                    if img_provider is None or gen_size is None:
+                        raise ValidationError("Image generation is not configured")
                     bg_prompt = enrich_background_prompt(plan.background_prompt, brand)
                     if render_mode == "native_text":
                         native_prompt = enrich_image_prompt(
@@ -654,7 +677,7 @@ class AgentController:
                     history_user = f"Repurpose PDF: {source_ref}"
 
             prior = session.exec(
-                select(ChatMessage).where(ChatMessage.session_id == int(session_id))
+                select(ChatMessage).where(ChatMessage.session_id == session_id)
             ).all()
             # For brief generate into an empty/new session, store the brief as the user turn
             if not history_user and not prior:
@@ -663,7 +686,7 @@ class AgentController:
             if history_user:
                 session.add(
                     ChatMessage(
-                        session_id=int(session_id),
+                        session_id=session_id,
                         tenant_id=tid,
                         role="user",
                         content=history_user,
@@ -675,7 +698,7 @@ class AgentController:
             }.get(source_type, "")
             session.add(
                 ChatMessage(
-                    session_id=int(session_id),
+                    session_id=session_id,
                     tenant_id=tid,
                     role="assistant",
                     content=(
@@ -685,7 +708,7 @@ class AgentController:
                     ).strip(),
                 )
             )
-            cs.updated_at = datetime.utcnow()
+            cs.updated_at = _utcnow()
             if (not cs.title or cs.title == "New chat") and history_user:
                 cs.title = history_user[:60]
             session.add(cs)
@@ -701,6 +724,8 @@ class AgentController:
             session.commit()
             for p in posts:
                 session.refresh(p)
+            complete_onboarding_step(session, tid, "generate")
+            session.commit()
             return create_success_response(
                 {
                     "batchId": batch.batch_id,
@@ -797,6 +822,7 @@ class AgentController:
     @RequirePermission("agent:chat", "posts:review")
     def score_post(self, id: str, user=None):
         _ensure_layout_column()
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             tenant = session.get(Tenant, tid)
@@ -817,7 +843,7 @@ class AgentController:
                 context_pack=pack,
             )
             post.score_json = json.dumps(score)
-            post.updated_at = datetime.utcnow()
+            post.updated_at = _utcnow()
             session.add(post)
             write_audit(
                 session,
@@ -838,6 +864,7 @@ class AgentController:
     def score_batch(self, id: str, user=None):
         """Comparative AI scores for all variants in a batch (distinct overalls)."""
         _ensure_layout_column()
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             tenant = session.get(Tenant, tid)
@@ -864,7 +891,7 @@ class AgentController:
                 # strip postId before persist
                 clean = {k: v for k, v in score.items() if k != "postId"}
                 p.score_json = json.dumps(clean)
-                p.updated_at = datetime.utcnow()
+                p.updated_at = _utcnow()
                 session.add(p)
                 updated.append(p)
             write_audit(
@@ -952,6 +979,7 @@ class AgentController:
     def ab_schedule(self, id: str, data: dict | None = None, user=None):
         """Suggest A/B schedule slots for a generation batch; optionally apply."""
         _ensure_layout_column()
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         apply = bool((data or {}).get("apply"))
         with get_session() as session:
@@ -993,7 +1021,7 @@ class AgentController:
                             when = None
                     post.scheduled_at = when
                     post.ab_label = str(s.get("label") or "")[:16] or None
-                    post.updated_at = datetime.utcnow()
+                    post.updated_at = _utcnow()
                     session.add(post)
                     applied.append(_post_dict(post))
                 write_audit(
@@ -1046,6 +1074,7 @@ class AgentController:
         """Send weekly snapshot email now (Amazon SES) for current tenant."""
         from modules.agent.src.weekly_snapshot import send_weekly_snapshots
 
+        user = require_user(user)
         tid = resolve_tenant_id(user)
         # Super admin may pass tenantId to send for another / all
         target = (data or {}).get("tenantId")
