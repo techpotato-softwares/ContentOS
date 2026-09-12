@@ -196,6 +196,37 @@ class ApiStack(Stack):
                     )
                 )
 
+        # Auth Lambda: verification + password-reset emails (least privilege SES)
+        auth_fn = lambda_construct.functions.get("auth")
+        if auth_fn:
+            from aws_cdk import aws_iam as iam
+
+            auth_fn.add_environment(
+                "SES_ENABLED", os.environ.get("SES_ENABLED", "true")
+            )
+            auth_fn.add_environment(
+                "SES_FROM_EMAIL",
+                os.environ.get("SES_FROM_EMAIL", os.environ.get("FROM_EMAIL", "noreply@contentos.app")),
+            )
+            auth_fn.add_environment(
+                "FROM_EMAIL",
+                os.environ.get("FROM_EMAIL", os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app")),
+            )
+            auth_fn.add_environment(
+                "FRONTEND_URL",
+                os.environ.get(
+                    "FRONTEND_URL",
+                    f"https://{config.custom_domain}" if config.custom_domain else "",
+                ),
+            )
+            auth_fn.add_to_role_policy(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["ses:SendEmail", "ses:SendRawEmail"],
+                    resources=["*"],
+                )
+            )
+
         print("\n🔐 Creating JWT secrets...")
         jwt_secrets = JwtSecretsConstruct(
             self, "JwtSecretsConstruct", config=config

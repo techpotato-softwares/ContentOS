@@ -5,11 +5,6 @@ from utils.webtoken import verify_access_token, JWTPayload
 
 
 def _normalize_user(user: JWTPayload) -> JWTPayload:
-    """Ensure tenant + role claims are present for authenticated request handlers.
-
-    Tokens historically use camelCase (`tenantId`). Accept snake_case aliases if
-    present so both forms resolve correctly for tenant isolation helpers.
-    """
     normalized: dict[str, Any] = dict(user)
     if normalized.get("tenantId") is None and normalized.get("tenant_id") is not None:
         normalized["tenantId"] = normalized["tenant_id"]
@@ -45,7 +40,10 @@ def auth_middleware(event: dict) -> dict | dict:
             return create_error_response(
                 AppError("Invalid token payload", 401, "UNAUTHORIZED")
             )
+        _assert_token_version(user)
         return {**event, "user": user}
+    except AppError as e:
+        return create_error_response(e)
     except Exception as e:
         return create_error_response(
             AppError(str(e) or "Invalid or expired token", 401, "UNAUTHORIZED")

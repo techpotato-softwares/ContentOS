@@ -1,19 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 export function ScrollProgress() {
-  const [progress, setProgress] = useState(0);
+  const barRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onScroll = () => {
+    const bar = barRef.current;
+    if (!bar) return;
+
+    let raf = 0;
+    const update = () => {
+      raf = 0;
       const el = document.documentElement;
       const max = el.scrollHeight - el.clientHeight;
-      setProgress(max > 0 ? (el.scrollTop / max) * 100 : 0);
+      const p = max > 0 ? el.scrollTop / max : 0;
+      bar.style.transform = `scaleX(${p})`;
     };
-    onScroll();
+
+    const onScroll = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(update);
+    };
+
+    update();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
   }, []);
 
   return (
@@ -22,8 +37,9 @@ export function ScrollProgress() {
       aria-hidden
     >
       <div
-        className="h-full bg-gradient-to-r from-accent-deep via-accent-glow to-accent transition-[width] duration-100 ease-out"
-        style={{ width: `${progress}%` }}
+        ref={barRef}
+        className="h-full origin-left bg-gradient-to-r from-accent-deep via-accent-glow to-accent will-change-transform"
+        style={{ transform: "scaleX(0)" }}
       />
     </div>
   );

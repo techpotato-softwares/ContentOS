@@ -121,6 +121,7 @@ def main():
     except Exception:
         pass
     with get_session() as session:
+        ensure_auth_schema(session)
         perm_map: dict[str, int] = {}
         for code, name in PERMS:
             existing = session.exec(select(Permission).where(Permission.permission_code == code)).first()
@@ -216,6 +217,8 @@ def main():
                     password=pwd,
                     role_id=role_map["super_admin"],
                     tenant_id=platform.tenant_id,
+                    email_verified_at=now,
+                    token_version=0,
                 )
             )
         if not session.exec(select(User).where(User.username == "demo")).first():
@@ -226,8 +229,16 @@ def main():
                     password=pwd,
                     role_id=role_map["tenant_admin"],
                     tenant_id=demo.tenant_id,
+                    email_verified_at=now,
+                    token_version=0,
                 )
             )
+        # Ensure existing seed users can publish locally
+        for uname in ("superadmin", "demo"):
+            u = session.exec(select(User).where(User.username == uname)).first()
+            if u and not u.email_verified_at:
+                u.email_verified_at = now
+                session.add(u)
         session.commit()
     print(f"ContentOS DB initialized. Users: superadmin / demo  password: {SEED_PASSWORD}")
 

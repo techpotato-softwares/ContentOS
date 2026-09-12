@@ -12,21 +12,21 @@ export function AdminTenantsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-3xl">Tenants</h1>
+        <h1 className="font-display text-2xl md:text-3xl">Tenants</h1>
         <p className="text-sm text-muted-foreground">Super admin — manage client companies and training.</p>
       </div>
       <form
-        className="flex gap-2 items-end"
+        className="flex flex-col sm:flex-row gap-2 sm:items-end"
         onSubmit={(e) => {
           e.preventDefault()
           void create({ name }).then(() => setName(""))
         }}
       >
-        <div className="flex-1 space-y-1">
+        <div className="flex-1 space-y-1 w-full">
           <Label>New company</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
-        <Button type="submit" disabled={createState.isLoading}>
+        <Button type="submit" className="w-full sm:w-auto" disabled={createState.isLoading}>
           Create
         </Button>
       </form>
@@ -35,7 +35,7 @@ export function AdminTenantsPage() {
         {tenants.map((t) => (
           <li
             key={t.tenantId}
-            className="flex items-center justify-between rounded-xl border border-border px-4 py-3 bg-background/40"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 bg-background/40"
           >
             <div>
               <div className="font-medium">{t.name}</div>

@@ -137,16 +137,16 @@ export function ReviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-3xl">Review & publish</h1>
+        <h1 className="font-display text-2xl md:text-3xl">Review & publish</h1>
         <p className="text-sm text-muted-foreground">
           Score drafts, approve, then publish text / image / carousel to LinkedIn.
         </p>
       </div>
       {bothConnected && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 text-sm">
           <span className="text-muted-foreground">Publish as</span>
           <select
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+            className="h-11 sm:h-8 w-full sm:w-auto rounded-md border border-border bg-background px-2 text-sm sm:text-xs"
             value={publishAs}
             onChange={(e) =>
               setPublishAs(e.target.value as "member" | "organization" | "auto")
@@ -184,7 +184,7 @@ export function ReviewPage() {
                       filename={`contentos-text-${p.postId}.png`}
                     />
                   )}
-                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-[140px]">
+                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-35">
                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">
                       Research text{p.imageUrl || p.attachedImage ? " + image" : ""}
                     </p>
@@ -198,7 +198,7 @@ export function ReviewPage() {
                 </div>
               ) : !p.imageUrl ? (
                 <div className="px-4 pt-4">
-                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-[140px]">
+                  <div className="rounded-2xl border border-border bg-muted/30 p-4 min-h-35">
                     <p className="text-sm whitespace-pre-wrap line-clamp-8">{p.caption}</p>
                   </div>
                 </div>
@@ -283,10 +283,11 @@ export function ReviewPage() {
                           ).unwrap()
                           void refetch()
                         } catch (e: unknown) {
+                          const d = (e as { data?: { message?: string; error?: { message?: string } | string } })
+                            ?.data
                           const msg =
-                            (e as { data?: { message?: string; error?: string } })?.data
-                              ?.message ||
-                            (e as { data?: { error?: string } })?.data?.error ||
+                            (typeof d?.error === "object" ? d.error?.message : d?.error) ||
+                            d?.message ||
                             "Post to LinkedIn failed"
                           setPublishError(String(msg))
                         }
@@ -310,10 +311,11 @@ export function ReviewPage() {
                           ).unwrap()
                           void refetch()
                         } catch (e: unknown) {
+                          const d = (e as { data?: { message?: string; error?: { message?: string } | string } })
+                            ?.data
                           const msg =
-                            (e as { data?: { message?: string; error?: string } })?.data
-                              ?.message ||
-                            (e as { data?: { error?: string } })?.data?.error ||
+                            (typeof d?.error === "object" ? d.error?.message : d?.error) ||
+                            d?.message ||
                             "Publish failed"
                           setPublishError(String(msg))
                         }

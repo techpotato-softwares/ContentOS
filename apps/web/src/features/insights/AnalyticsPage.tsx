@@ -15,22 +15,23 @@ export function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-3xl">Analytics</h1>
+        <h1 className="font-display text-2xl md:text-3xl">Analytics</h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Team performance snapshot and AI guidance on what and when to publish.
         </p>
       </div>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h2 className="font-display text-xl">Weekly team snapshot</h2>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => void refetch()}>
+          <div className="grid grid-cols-2 sm:flex gap-2">
+            <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => void refetch()}>
               Refresh
             </Button>
             <Button
               size="sm"
               variant="secondary"
+              className="w-full sm:w-auto"
               disabled={sendState.isLoading}
               onClick={async () => {
                 await sendWeekly()
@@ -48,7 +49,7 @@ export function AnalyticsPage() {
               {stats.periodStart} → {stats.periodEnd}
               {sendState.isSuccess && " · Email queued / sent (see SES_ENABLED)"}
             </p>
-            <div className="grid sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {[
                 ["Generated", stats.generated],
                 ["Batches", stats.batches],

@@ -1,8 +1,16 @@
+# pyrefly: ignore-errors[bad-override]
+# SQLModel declares __tablename__ as a declared_attr descriptor; string overrides
+# are the documented API but trip Pyrefly's override check.
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlmodel import SQLModel, Field, Column
 from sqlalchemy import Text, UniqueConstraint
+
+
+def _utcnow() -> datetime:
+    """Naive UTC now (same semantics as deprecated datetime.utcnow)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Tenant(SQLModel, table=True):
@@ -16,6 +24,8 @@ class Tenant(SQLModel, table=True):
     is_active: bool = True
     # Training + theme (JSON strings)
     training_json: str = Field(default="{}", sa_column=Column(Text, default="{}"))
+    # First-run wizard progress (JSON string). See utils.onboarding.
+    onboarding_json: str = Field(default="{}", sa_column=Column(Text, default="{}"))
     context_pack_cached: Optional[str] = Field(default=None, sa_column=Column(Text))
     context_pack_version: int = 0
     ui_mode: str = Field(default="platform")  # platform | white_label
@@ -24,14 +34,15 @@ class Tenant(SQLModel, table=True):
     primary_color: Optional[str] = None
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class User(SQLModel, table=True):
-    """App user. Tenant membership is ``tenant_id`` + ``role_id`` (no separate join table).
+    """App user. Tenant membership is ``tenant_id`` + ``role_id``.
 
-    Self-serve signup creates User + Tenant with ``tenant_admin`` role atomically.
+    ``email_verified_at`` gates publishing. ``token_version`` invalidates JWTs
+    after password reset (must match claim ``tv``).
     """
 
     __tablename__ = "users"
@@ -42,8 +53,24 @@ class User(SQLModel, table=True):
     password: str
     role_id: Optional[int] = Field(default=None, foreign_key="roles.role_id")
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    email_verified_at: Optional[datetime] = Field(default=None, index=True)
+    token_version: int = Field(default=0)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class AuthToken(SQLModel, table=True):
+    """One-time auth tokens (email verify / password reset). Store only ``token_hash``."""
+
+    __tablename__ = "auth_tokens"
+    token_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id", index=True)
+    purpose: str = Field(index=True)  # email_verify | password_reset
+    token_hash: str = Field(unique=True, index=True)
+    expires_at: datetime = Field(index=True)
+    used_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=_utcnow)
+    request_key: Optional[str] = Field(default=None, index=True)  # hashed email for rate limits
 
 
 class Role(SQLModel, table=True):
@@ -52,8 +79,8 @@ class Role(SQLModel, table=True):
     role_name: str = Field(unique=True, index=True)
     description: str = ""
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class Permission(SQLModel, table=True):
@@ -63,8 +90,8 @@ class Permission(SQLModel, table=True):
     permission_name: str
     description: str = ""
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class RolePermission(SQLModel, table=True):
@@ -85,8 +112,8 @@ class TrainingDocument(SQLModel, table=True):
     priority: int = 100
     is_active: bool = True
     created_by: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class ChatSession(SQLModel, table=True):
@@ -95,8 +122,8 @@ class ChatSession(SQLModel, table=True):
     tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
     user_id: int = Field(foreign_key="users.user_id", index=True)
     title: str = "New chat"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class ChatMessage(SQLModel, table=True):
@@ -106,7 +133,7 @@ class ChatMessage(SQLModel, table=True):
     tenant_id: int = Field(index=True)
     role: str  # user | assistant | system
     content: str = Field(sa_column=Column(Text))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class GenerationBatch(SQLModel, table=True):
@@ -117,7 +144,7 @@ class GenerationBatch(SQLModel, table=True):
     session_id: Optional[int] = Field(default=None, foreign_key="chat_sessions.session_id")
     user_brief: str = Field(sa_column=Column(Text))
     status: str = "completed"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ContentPost(SQLModel, table=True):
@@ -143,8 +170,8 @@ class ContentPost(SQLModel, table=True):
     reviewed_at: Optional[datetime] = None
     scheduled_at: Optional[datetime] = Field(default=None, index=True)
     published_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class SocialAccount(SQLModel, table=True):
@@ -170,8 +197,8 @@ class SocialAccount(SQLModel, table=True):
     token_payload_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text))
     token_expiry: Optional[datetime] = None
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class AuditLog(SQLModel, table=True):
@@ -183,7 +210,26 @@ class AuditLog(SQLModel, table=True):
     resource_type: str
     resource_id: Optional[str] = None
     detail: Optional[str] = Field(default=None, sa_column=Column(Text))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class TenantInvite(SQLModel, table=True):
+    """Team invite. ``token`` stores a SHA-256 hash of the raw secret — never the raw value."""
+
+    __tablename__ = "tenant_invites"
+    __table_args__ = (UniqueConstraint("token", name="uq_tenant_invites_token"),)
+    invite_id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="tenants.tenant_id", index=True)
+    email: str = Field(index=True)
+    role: str = Field(default="tenant_member")  # tenant_member | tenant_admin
+    token: str = Field(index=True)  # sha256 hex of raw invite token
+    expires_at: datetime
+    invited_by: Optional[int] = Field(default=None, foreign_key="users.user_id")
+    status: str = Field(default="pending", index=True)  # pending|accepted|revoked|expired
+    accepted_by_user_id: Optional[int] = None
+    accepted_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 # Keep demo table for kit compatibility (disabled in ContentOS modules by default)
@@ -196,5 +242,5 @@ class DemoItem(SQLModel, table=True):
     status: str = "active"
     created_by: Optional[int] = None
     updated_by: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)

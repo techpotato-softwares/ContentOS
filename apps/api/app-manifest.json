@@ -23,6 +23,8 @@
         { "method": "GET", "path": "/api/tenants/me/theme", "controller": "TenantsController", "action": "get_theme" },
         { "method": "GET", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "get_training" },
         { "method": "PUT", "path": "/api/tenants/me/training", "controller": "TenantsController", "action": "put_training" },
+        { "method": "GET", "path": "/api/tenants/me/onboarding", "controller": "TenantsController", "action": "get_onboarding" },
+        { "method": "PUT", "path": "/api/tenants/me/onboarding", "controller": "TenantsController", "action": "put_onboarding" },
         { "method": "GET", "path": "/api/admin/tenants/{tenantId}/training", "controller": "TenantsController", "action": "admin_get_training" },
         { "method": "PUT", "path": "/api/admin/tenants/{tenantId}/training", "controller": "TenantsController", "action": "admin_put_training" },
         { "method": "GET", "path": "/api/admin/tenants/{tenantId}/training/preview", "controller": "TenantsController", "action": "training_preview" },
@@ -32,7 +34,12 @@
         { "method": "POST", "path": "/api/admin/tenants/{tenantId}/brand/logo", "controller": "TenantsController", "action": "admin_upload_logo" },
         { "method": "GET", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "list_docs" },
         { "method": "POST", "path": "/api/tenants/me/training/docs", "controller": "TenantsController", "action": "create_doc" },
-        { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" }
+        { "method": "DELETE", "path": "/api/tenants/me/training/docs/{id}", "controller": "TenantsController", "action": "delete_doc" },
+        { "method": "POST", "path": "/api/tenants/invites", "controller": "InvitesController", "action": "create_invite" },
+        { "method": "GET", "path": "/api/tenants/invites", "controller": "InvitesController", "action": "list_invites" },
+        { "method": "DELETE", "path": "/api/tenants/invites/{inviteId}", "controller": "InvitesController", "action": "revoke_invite" },
+        { "method": "GET", "path": "/api/tenants/invites/preview", "controller": "InvitesController", "action": "preview_invite" },
+        { "method": "POST", "path": "/api/tenants/invites/accept", "controller": "InvitesController", "action": "accept_invite" }
       ]
     },
     "agent": {

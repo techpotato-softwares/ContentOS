@@ -13,7 +13,7 @@ import {
   Layers,
 } from "lucide-react"
 import { useAppSelector } from "@/app/hooks"
-import { useListPostsQuery } from "@/features/api/contentApi"
+import { useListPostsQuery, useGetOnboardingQuery } from "@/features/api/contentApi"
 import { Button } from "@/components/ui/button"
 import { DashboardOrb } from "@/shared/ui/DashboardOrb"
 import { mediaSrc } from "@/shared/lib/media"
@@ -61,6 +61,7 @@ export function DashboardPage() {
   const user = useAppSelector((s) => s.auth.user)
   const brand = useAppSelector((s) => s.theme.brand)
   const { data: posts = [] } = useListPostsQuery()
+  const { data: onboarding } = useGetOnboardingQuery()
 
   const drafts = posts.filter((p) => p.status === "draft").length
   const pending = posts.filter((p) => p.status === "pending_review").length
@@ -77,7 +78,23 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-primary/10 via-background/40 to-secondary/15 p-6 md:p-8">
+      {onboarding?.showWizard && (
+        <section className="rounded-3xl border border-primary/30 bg-primary/8 p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <h2 className="font-medium">Finish workspace setup</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Connect LinkedIn, train your brand, generate, review, and publish.
+            </p>
+          </div>
+          <Button asChild className="rounded-xl shrink-0">
+            <Link to="/onboarding">
+              Continue setup
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </section>
+      )}
+      <section className="relative overflow-hidden rounded-3xl border border-border bg-linear-to-br from-primary/10 via-background/40 to-secondary/15 p-6 md:p-8">
         <div className="pointer-events-none absolute -right-8 top-0 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
         <div className="pointer-events-none absolute -left-10 bottom-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
         <div className="relative grid lg:grid-cols-[1.2fr_0.8fr] gap-6 items-center">
@@ -86,24 +103,24 @@ export function DashboardPage() {
               <Sparkles className="h-3.5 w-3.5" />
               LinkedIn content automation
             </div>
-            <h1 className="font-display text-4xl md:text-5xl leading-tight">
+            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl leading-tight">
               Welcome back, {user?.username}
             </h1>
-            <p className="text-muted-foreground mt-3 max-w-xl text-base">
+            <p className="text-muted-foreground mt-3 max-w-xl text-sm sm:text-base">
               Create on-brand informative posts for{" "}
               <span className="text-foreground font-medium">
                 {brand?.appDisplayName || "your company"}
               </span>
               , review them, and publish for reach — without starting from a blank page.
             </p>
-            <div className="flex flex-wrap gap-3 mt-6">
-              <Button asChild>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-3 mt-6 w-full">
+              <Button asChild className="w-full sm:w-auto">
                 <Link to="/agent">
                   Generate posts
                   <ArrowUpRight className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild variant="outline">
+              <Button asChild variant="outline" className="w-full sm:w-auto">
                 <Link to="/insights">Browse insights</Link>
               </Button>
             </div>
@@ -112,7 +129,7 @@ export function DashboardPage() {
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1 }}
-            className="relative h-[240px] md:h-[280px] rounded-2xl border border-border/60 bg-background/30 backdrop-blur-sm overflow-hidden"
+            className="relative h-60 md:h-70 rounded-2xl border border-border/60 bg-background/30 backdrop-blur-sm overflow-hidden"
           >
             <DashboardOrb className="absolute inset-0" />
             <div className="absolute bottom-3 left-3 right-3 flex justify-between text-[11px] text-muted-foreground">
@@ -158,7 +175,7 @@ export function DashboardPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.06 * i }}
               className={cn(
-                "group relative overflow-hidden rounded-2xl border border-border p-5 bg-gradient-to-br",
+                "group relative overflow-hidden rounded-2xl border border-border p-5 bg-linear-to-br",
                 c.tone,
               )}
             >

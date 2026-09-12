@@ -13,6 +13,8 @@ class JWTPayload(TypedDict, total=False):
     tenantId: int
     permissions: list[str]
     modulesEnabled: list[str]
+    emailVerified: bool
+    tv: int  # token_version — bump on password reset to invalidate sessions
 
 def _expiry(env_key: str, default: str) -> str:
     return os.environ.get(env_key, default)

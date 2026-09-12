@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { appLoginUrl } from "@/lib/appUrl";
 import { CountUp } from "@/components/CountUp";
 import { DraftStudio } from "@/components/DraftStudio";
 import { FaqAccordion } from "@/components/FaqAccordion";
 import { HeroHeadline } from "@/components/HeroHeadline";
 import { MarketingCTA } from "@/components/MarketingCTA";
+import { HeroAtmosphere, MarketingImage } from "@/components/MarketingImage";
 import { PipelineVisual } from "@/components/PipelineVisual";
 import { Reveal } from "@/components/Reveal";
 import { WeekCadence } from "@/components/WeekCadence";
@@ -83,18 +85,21 @@ const audiences = [
     promise: "Post consistently on-brand, in minutes — without waiting on design.",
     proof: "Shared brand training · Editor + approver roles · Insights for the calendar",
     href: "/use-cases#teams",
+    image: "/images/usecase-teams.webp",
   },
   {
     title: "Agencies",
     promise: "Run every client's LinkedIn from one multi-tenant operating system.",
     proof: "Separate brand workspaces · Faster turnarounds · White-label ready options",
     href: "/use-cases#agencies",
+    image: "/images/usecase-agency.webp",
   },
   {
     title: "Founders & personal brands",
     promise: "Train once on your voice — then approve drafts that still sound like you.",
     proof: "Voice-matched copy · Carousels without a design stack · You approve first",
     href: "/use-cases#founders",
+    image: "/images/usecase-founder.webp",
   },
 ];
 
@@ -155,9 +160,10 @@ export default function HomePage() {
     <>
       {/* Hero */}
       <section className="relative overflow-hidden">
+        <HeroAtmosphere opacity={0.45} />
         <div className="grid-overlay absolute inset-0" aria-hidden />
         <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_65%_70%_at_90%_10%,rgba(62,233,201,0.28),transparent_55%),radial-gradient(ellipse_45%_50%_at_5%_90%,rgba(212,180,131,0.08),transparent_50%)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_65%_70%_at_90%_10%,rgba(62,233,201,0.22),transparent_55%),radial-gradient(ellipse_45%_50%_at_5%_90%,rgba(212,180,131,0.06),transparent_50%)]"
           aria-hidden
         />
         <div className="relative mx-auto grid max-w-[1120px] items-center gap-10 px-5 pb-12 pt-14 md:grid-cols-[1.05fr_0.95fr] md:gap-10 md:px-6 md:pb-16 md:pt-18 lg:pt-20">
@@ -175,15 +181,15 @@ export default function HomePage() {
             </p>
             <span className="hero-glow-line animate-rise-delay-2" aria-hidden />
             <div className="animate-rise-delay-3 mt-7 flex flex-wrap items-center gap-3">
-              <Link href="/contact" className="btn-primary btn-demo">
-                Book a demo
+              <Link href={appLoginUrl()} className="btn-primary btn-demo">
+                Start Free
               </Link>
               <Link href="/product" className="btn-secondary">
                 See how it works
               </Link>
             </div>
             <p className="animate-rise-delay-3 mt-4 text-sm text-steel">
-              Free 20-min walkthrough · No credit card · Human approval always on
+              Free to start · No credit card · Human approval always on
             </p>
             <div className="animate-rise-delay-3 mt-5 flex flex-wrap gap-2">
               <span className="trust-chip">
@@ -204,7 +210,7 @@ export default function HomePage() {
       </section>
 
       {/* Social proof strip */}
-      <section className="border-y border-[var(--line)] bg-[rgba(20,40,32,0.6)]">
+      <section className="cv-auto border-y border-[var(--line)] bg-[rgba(20,40,32,0.6)]">
         <div className="section-inner px-5 py-7 md:px-6">
           <p className="text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-steel">
             Built for teams who refuse generic LinkedIn AI
@@ -222,8 +228,8 @@ export default function HomePage() {
       </section>
 
       {/* Result metrics */}
-      <section className="border-b border-[var(--line)]">
-        <div className="section-inner grid gap-4 px-5 py-10 sm:grid-cols-2 md:grid-cols-4 md:px-6">
+      <section className="cv-auto border-b border-[var(--line)]">
+        <div className="section-inner grid gap-4 px-5 py-12 sm:grid-cols-2 md:grid-cols-4 md:gap-5 md:px-6 md:py-14">
           {results.map((item) => (
             <CountUp key={item.label} value={item.value} label={item.label} />
           ))}
@@ -231,19 +237,21 @@ export default function HomePage() {
       </section>
 
       {/* Outcomes */}
-      <section className="border-b border-[var(--line)] bg-[rgba(11,18,16,0.35)]">
-        <div className="section-inner grid gap-6 px-5 py-10 sm:grid-cols-2 md:grid-cols-4 md:px-6">
+      <section className="cv-auto border-b border-[var(--line)] bg-[rgba(11,18,16,0.4)]">
+        <div className="section-inner grid gap-4 px-5 py-12 sm:grid-cols-2 md:grid-cols-4 md:gap-5 md:px-6 md:py-14">
           {outcomes.map((item) => (
-            <div key={item.title} className="hover-line border-l border-accent/40 pl-4">
+            <div key={item.title} className="outcome-tile pl-5">
               <p className="text-sm font-semibold text-ink">{item.title}</p>
-              <p className="mt-1.5 text-xs leading-relaxed text-steel">{item.copy}</p>
+              <p className="mt-2 text-xs leading-relaxed text-steel md:text-[0.8125rem]">
+                {item.copy}
+              </p>
             </div>
           ))}
         </div>
       </section>
 
       {/* Week cadence visual */}
-      <section className="section">
+      <section className="cv-auto section">
         <div className="section-inner">
           <Reveal>
             <p className="eyebrow">The difference</p>
@@ -264,7 +272,7 @@ export default function HomePage() {
       </section>
 
       {/* Problem / Solution */}
-      <section className="section section-band border-t border-[var(--line)]">
+      <section className="cv-auto section section-band border-t border-[var(--line)]">
         <div className="section-inner">
           <Reveal>
             <p className="eyebrow">Why ContentOS</p>
@@ -323,7 +331,7 @@ export default function HomePage() {
       </section>
 
       {/* Mid CTA */}
-      <section className="section !pt-0">
+      <section className="cv-auto section !pt-0">
         <div className="section-inner">
           <div className="mid-cta-band px-6 py-10 md:flex md:items-center md:justify-between md:px-10 md:py-12">
             <div>
@@ -331,19 +339,24 @@ export default function HomePage() {
               <h2 className="display mt-2 max-w-xl text-2xl text-ink md:text-3xl">
                 Watch ContentOS draft your next LinkedIn post — then you approve.
               </h2>
-              <p className="mt-3 max-w-lg text-sm text-steel">
-                20-minute walkthrough. Bring your brand context. Leave with a clear fit.
+              <p className="mt-3 max-w-lg text-sm leading-relaxed text-steel">
+                Free to start. Bring your brand context. Leave with a clear publishing loop.
               </p>
             </div>
-            <Link href="/contact" className="btn-primary btn-demo mt-6 inline-flex md:mt-0">
-              Book a 20-min demo
-            </Link>
+            <div className="mt-6 flex flex-wrap gap-3 md:mt-0">
+              <Link href={appLoginUrl()} className="btn-primary btn-demo inline-flex">
+                Start Free
+              </Link>
+              <Link href="/product" className="btn-secondary inline-flex">
+                How it works
+              </Link>
+            </div>
           </div>
         </div>
       </section>
 
       {/* How it works */}
-      <section className="section section-band">
+      <section className="cv-auto section section-band">
         <div className="section-inner">
           <Reveal>
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -368,11 +381,11 @@ export default function HomePage() {
           <ol className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {steps.map((step, i) => (
               <Reveal key={step.title} delay={i * 60}>
-                <li className="hover-step relative h-full">
-                  <span className="hover-step-num display text-3xl text-accent/30">
+                <li className="step-tile">
+                  <span className="display text-3xl text-accent/35">
                     {String(i + 1).padStart(2, "0")}
                   </span>
-                  <h3 className="mt-2 text-lg font-semibold text-ink">{step.title}</h3>
+                  <h3 className="mt-3 text-lg font-semibold text-ink">{step.title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-steel">{step.copy}</p>
                 </li>
               </Reveal>
@@ -390,7 +403,7 @@ export default function HomePage() {
       </section>
 
       {/* Platform */}
-      <section className="section border-t border-[var(--line)]">
+      <section className="cv-auto section border-t border-[var(--line)]">
         <div className="section-inner">
           <Reveal>
             <p className="eyebrow">Platform</p>
@@ -401,12 +414,14 @@ export default function HomePage() {
           <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {capabilities.map((item, i) => (
               <Reveal key={item.title} delay={(i % 3) * 70}>
-                <div className="hover-lift glass-card h-full rounded-2xl border border-[var(--line)] p-6">
-                  <span className="display text-2xl text-accent/35">
+                <div className="hover-lift glass-card h-full rounded-2xl border border-[var(--line)] p-6 md:p-7">
+                  <span className="display text-2xl text-accent/40">
                     {String(i + 1).padStart(2, "0")}
                   </span>
-                  <h3 className="mt-3 text-lg font-semibold text-ink">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-steel">{item.copy}</p>
+                  <h3 className="mt-3 text-lg font-semibold tracking-tight text-ink">
+                    {item.title}
+                  </h3>
+                  <p className="mt-2.5 text-sm leading-relaxed text-steel">{item.copy}</p>
                 </div>
               </Reveal>
             ))}
@@ -422,7 +437,7 @@ export default function HomePage() {
       </section>
 
       {/* Audiences */}
-      <section className="section section-band border-t border-[var(--line)]">
+      <section className="cv-auto section section-band border-t border-[var(--line)]">
         <div className="section-inner">
           <Reveal>
             <p className="eyebrow">Who it&apos;s for</p>
@@ -435,14 +450,28 @@ export default function HomePage() {
               <Reveal key={item.title} delay={i * 80}>
                 <Link
                   href={item.href}
-                  className="hover-lift flex h-full flex-col rounded-2xl border border-[var(--line)] bg-surface/70 p-6 transition"
+                  className="group hover-lift flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-surface/40 transition"
                 >
-                  <h3 className="text-xl font-semibold text-ink">{item.title}</h3>
-                  <p className="mt-4 flex-1 text-sm leading-relaxed text-ink-soft">{item.promise}</p>
-                  <p className="mt-5 border-t border-[var(--line)] pt-4 text-xs leading-relaxed text-steel">
-                    {item.proof}
-                  </p>
-                  <span className="mt-4 text-sm font-semibold text-accent">Learn more →</span>
+                  <MarketingImage
+                    src={item.image}
+                    alt={item.title}
+                    variant="card"
+                    badge="Audience"
+                    eyebrow="Who it's for"
+                    caption={item.title}
+                    className="aspect-[16/11] w-full"
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                  />
+                  <div className="flex flex-1 flex-col p-6">
+                    <h3 className="text-lg font-semibold text-ink">{item.title}</h3>
+                    <p className="mt-3 flex-1 text-sm leading-relaxed text-ink-soft">{item.promise}</p>
+                    <p className="mt-4 border-t border-[var(--line)] pt-4 text-xs leading-relaxed text-steel">
+                      {item.proof}
+                    </p>
+                    <span className="mt-4 text-sm font-semibold text-accent transition group-hover:text-accent-glow">
+                      Learn more →
+                    </span>
+                  </div>
                 </Link>
               </Reveal>
             ))}
@@ -451,7 +480,7 @@ export default function HomePage() {
       </section>
 
       {/* Demo process */}
-      <section className="section border-t border-[var(--line)]">
+      <section className="cv-auto section border-t border-[var(--line)]">
         <div className="section-inner">
           <Reveal>
             <p className="eyebrow">The demo</p>
@@ -474,8 +503,8 @@ export default function HomePage() {
           </div>
           <Reveal>
             <div className="mt-10">
-              <Link href="/contact" className="btn-primary btn-demo">
-                Book your demo
+              <Link href={appLoginUrl()} className="btn-primary btn-demo">
+                Start Free
               </Link>
             </div>
           </Reveal>
@@ -483,7 +512,7 @@ export default function HomePage() {
       </section>
 
       {/* Trust */}
-      <section className="section section-band border-t border-[var(--line)]">
+      <section className="cv-auto section section-band border-t border-[var(--line)]">
         <div className="section-inner">
           <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_0.95fr]">
             <Reveal>
@@ -515,12 +544,14 @@ export default function HomePage() {
             <div className="space-y-4">
               {quotes.map((item, i) => (
                 <Reveal key={item.role} delay={i * 90}>
-                  <blockquote className="hover-lift rounded-2xl border border-[var(--line)] bg-[#0a1511]/85 p-6">
+                  <blockquote className="quote-card">
                     <p className="quote-mark" aria-hidden>
                       &ldquo;
                     </p>
                     <p className="-mt-4 text-base leading-relaxed text-ink-soft">{item.quote}</p>
-                    <footer className="mt-4 text-sm font-medium text-accent">{item.role}</footer>
+                    <footer className="mt-5 text-xs font-semibold uppercase tracking-[0.08em] text-accent">
+                      {item.role}
+                    </footer>
                   </blockquote>
                 </Reveal>
               ))}
@@ -530,7 +561,7 @@ export default function HomePage() {
       </section>
 
       {/* Objections / FAQ */}
-      <section className="section border-t border-[var(--line)]">
+      <section className="cv-auto section border-t border-[var(--line)]">
         <div className="section-inner max-w-3xl">
           <Reveal>
             <p className="eyebrow">Common questions</p>
@@ -543,8 +574,8 @@ export default function HomePage() {
           </div>
           <Reveal>
             <div className="mt-10">
-              <Link href="/contact" className="btn-primary btn-demo">
-                Still unsure? Book a demo
+              <Link href={appLoginUrl()} className="btn-primary btn-demo">
+                Still unsure? Start Free
               </Link>
             </div>
           </Reveal>
@@ -552,7 +583,7 @@ export default function HomePage() {
       </section>
 
       {/* Risk reversal */}
-      <section className="section !pt-0">
+      <section className="cv-auto section !pt-0">
         <div className="section-inner">
           <Reveal>
             <div className="guarantee-band">
@@ -582,7 +613,7 @@ export default function HomePage() {
       <MarketingCTA
         title="No more blank-page Mondays."
         description="See ContentOS generate on-brand LinkedIn drafts for your company — then decide if it belongs in your stack."
-        primary={{ href: "/contact", label: "Book a demo" }}
+        primary={{ href: appLoginUrl(), label: "Start Free" }}
         secondary={{ href: "/pricing", label: "View plans" }}
       />
     </>
