@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react"
-import { UserPlus, Trash2 } from "lucide-react"
+import { Link, useNavigate } from "react-router-dom"
+import { UserPlus, Trash2, Rocket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input, Label } from "@/components/ui/input"
 import {
   useCreateTenantInviteMutation,
   useListTenantInvitesQuery,
   useRevokeTenantInviteMutation,
+  useGetOnboardingQuery,
+  usePutOnboardingMutation,
 } from "@/features/api/contentApi"
 
 function apiError(err: unknown): string {
@@ -16,9 +19,12 @@ function apiError(err: unknown): string {
 }
 
 export function TeamPage() {
+  const navigate = useNavigate()
   const { data, isLoading, error, refetch } = useListTenantInvitesQuery()
+  const { data: onboarding } = useGetOnboardingQuery()
   const [createInvite, createState] = useCreateTenantInviteMutation()
   const [revokeInvite, revokeState] = useRevokeTenantInviteMutation()
+  const [putOnboarding, putOnboardingState] = usePutOnboardingMutation()
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<"tenant_member" | "tenant_admin">("tenant_member")
   const [formError, setFormError] = useState<string | null>(null)
@@ -68,6 +74,43 @@ export function TeamPage() {
           Invite teammates by email. They join your workspace with the role you choose.
         </p>
       </div>
+
+      <section className="rounded-3xl border border-border bg-muted/20 p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <Rocket className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+          <div>
+            <h2 className="font-medium">First-run setup</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {onboarding?.showWizard
+                ? "Finish LinkedIn → train → generate → review → publish."
+                : onboarding?.skipped
+                  ? "Setup was skipped. Reopen anytime to continue guided steps."
+                  : "Setup is complete. You can still reopen the guide."}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          {onboarding?.showWizard ? (
+            <Button asChild className="rounded-xl" size="sm">
+              <Link to="/onboarding">Continue setup</Link>
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-xl"
+              disabled={putOnboardingState.isLoading}
+              onClick={() => {
+                void putOnboarding({ skipped: false, reopen: true })
+                  .unwrap()
+                  .then(() => navigate("/onboarding"))
+              }}
+            >
+              Reopen setup
+            </Button>
+          )}
+        </div>
+      </section>
 
       {(formError || createState.isError) && (
         <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

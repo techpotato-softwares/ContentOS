@@ -1,0 +1,12 @@
+# Import roots for ContentOS API layout (shared layer + modules + src).
+# Without this, heuristics only use apps/api/src and miss database/decorators/utils.
+search-path = ["layers/shared/python/src", ".", "src"]
+disable-search-path-heuristics = true
+project-includes = [
+  "layers/shared/python/src/**/*.py",
+  "modules/**/*.py",
+  "src/**/*.py",
+  "tests/**/*.py",
+  "scripts/**/*.py",
+]
+project-excludes = ["**/__pycache__", "**/.venv/**", "**/.pytest_cache/**"]
