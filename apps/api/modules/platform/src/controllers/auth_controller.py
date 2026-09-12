@@ -68,6 +68,30 @@ _RESET_REQUEST_MSG = (
     "If an account exists for that email, we sent a password reset link."
 )
 
+# Platform RBAC catalog — ensured idempotently on register so production signup
+# does not depend on scripts/seed.py (seed is local/dev only).
+_PERMS = [
+    ("admin:tenants", "Manage all tenants"),
+    ("training:manage", "Edit training schema"),
+    ("tenant:admin", "Tenant administration"),
+    ("agent:chat", "Agent chat & generate"),
+    ("posts:review", "Review posts"),
+    ("posts:publish", "Publish to LinkedIn"),
+    ("admin", "Legacy admin"),
+]
+
+_ROLES = {
+    "super_admin": [p[0] for p in _PERMS],
+    "tenant_admin": [
+        "training:manage",
+        "tenant:admin",
+        "agent:chat",
+        "posts:review",
+        "posts:publish",
+    ],
+    "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
+}
+
 
 def _user_permissions(session, role_id: int | None) -> tuple[Role | None, list[str]]:
     role = session.get(Role, role_id) if role_id else None
