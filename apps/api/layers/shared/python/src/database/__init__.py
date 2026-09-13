@@ -19,7 +19,14 @@ def get_engine():
     global _engine
     if _engine is None:
         url = _resolve_database_url()
-        _engine = create_engine(url, pool_pre_ping=True, pool_size=5)
+        if url.startswith("sqlite"):
+            _engine = create_engine(
+                url,
+                connect_args={"check_same_thread": False},
+                pool_pre_ping=True,
+            )
+        else:
+            _engine = create_engine(url, pool_pre_ping=True, pool_size=5)
     return _engine
 
 

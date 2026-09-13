@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import select
 from decorators import Controller, Get, Post, Put, Delete
 from decorators.auth_decorators import RequirePermission, RequireModule
@@ -8,6 +8,14 @@ from database import get_session
 from database.models import Tenant, TrainingDocument
 from middleware.error_handler import NotFoundError, ValidationError, create_success_response
 from utils.tenant import resolve_tenant_id, is_super_admin, require_user, write_audit
+from utils.onboarding import (
+    apply_put_patch,
+    complete_onboarding_step,
+    ensure_onboarding_schema,
+    load_tenant_onboarding,
+    save_tenant_onboarding,
+    sync_onboarding_from_reality,
+)
 from training.schema import (
     parse_training,
     render_context_pack,
@@ -68,7 +76,7 @@ def _rebuild_pack(session, tenant: Tenant) -> str:
     pack = render_context_pack(training, extra)
     tenant.context_pack_cached = pack
     tenant.context_pack_version = (tenant.context_pack_version or 0) + 1
-    tenant.updated_at = datetime.utcnow()
+    tenant.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(tenant)
     return pack
 
@@ -116,7 +124,7 @@ class TenantsController:
             write_audit(
                 session,
                 tenant_id=t.tenant_id,
-                actor_user_id=user.get("userId"),
+                actor_user_id=(user or {}).get("userId"),
                 action="tenant.create",
                 resource_type="tenant",
                 resource_id=str(t.tenant_id),
@@ -205,9 +213,63 @@ class TenantsController:
                 resource_id=str(tid),
             )
             session.commit()
+            complete_onboarding_step(session, tid, "training")
+            session.commit()
             return create_success_response(
                 {"training": training.model_dump(), "contextPackVersion": t.context_pack_version, "packPreviewLen": len(pack)}
             )
+
+    @Get("/tenants/me/onboarding")
+    @RequireModule("tenants")
+    @RequirePermission("tenant:admin", "training:manage", "agent:chat", "admin:tenants")
+    def get_onboarding(self, user=None, query: dict | None = None):
+        """Return wizard progress (synced from LinkedIn/training/batch/publish reality)."""
+        q = query or {}
+        requested = int(q["tenantId"]) if q.get("tenantId") else None
+        tid = resolve_tenant_id(user, requested)
+        with get_session() as session:
+            ensure_onboarding_schema(session)
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            state = sync_onboarding_from_reality(session, t)
+            session.commit()
+            return create_success_response(state)
+
+    @Put("/tenants/me/onboarding")
+    @RequireModule("tenants")
+    @RequirePermission("tenant:admin", "training:manage", "admin:tenants")
+    def put_onboarding(self, data: dict, user=None, query: dict | None = None):
+        """Update wizard progress (skip / reopen / explicit step completion)."""
+        q = query or {}
+        requested = int(q["tenantId"]) if q.get("tenantId") else None
+        if (data or {}).get("tenantId") and is_super_admin(user):
+            requested = int(data["tenantId"])
+        tid = resolve_tenant_id(user, requested)
+        with get_session() as session:
+            ensure_onboarding_schema(session)
+            t = session.get(Tenant, tid)
+            if not t:
+                raise NotFoundError("Tenant not found")
+            current = load_tenant_onboarding(t)
+            updated = apply_put_patch(current, data or {})
+            public = save_tenant_onboarding(session, t, updated)
+            write_audit(
+                session,
+                tenant_id=tid,
+                actor_user_id=(user or {}).get("userId"),
+                action="onboarding.update",
+                resource_type="tenant",
+                resource_id=str(tid),
+                detail=json.dumps(
+                    {
+                        "skipped": bool(public.get("skipped")),
+                        "completedAt": public.get("completedAt"),
+                    }
+                ),
+            )
+            session.commit()
+            return create_success_response(public)
 
     # Admin path aliases
     @Get("/admin/tenants/{tenantId}/training")
