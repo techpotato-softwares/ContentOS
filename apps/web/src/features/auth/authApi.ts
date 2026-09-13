@@ -101,8 +101,7 @@ export const authApi = createApi({
         method: "POST",
         body: { token: body.token, password: body.password },
       }),
-      transformResponse: (r: unknown) =>
-        unwrapData<{ success?: boolean; message: string }>(r),
+      transformResponse: (r: unknown) => unwrapData<{ success?: boolean; message: string }>(r),
     }),
   }),
 })
