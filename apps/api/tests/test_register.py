@@ -27,15 +27,14 @@ os.environ["SES_FROM_EMAIL"] = "noreply@localhost"
 os.environ["FRONTEND_URL"] = "http://localhost:5173"
 os.environ.pop("DATABASE_URL", None)
 
+import database as db_mod
+from database.models import Permission, Role, RolePermission, Tenant, User
+from middleware.error_handler import ConflictError, ValidationError
+from modules.platform.src.controllers.auth_controller import AuthController
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, select
-
-import database as db_mod
-from database.models import User, Tenant, Role
-from middleware.error_handler import ConflictError, ValidationError, AppError
 from utils.webtoken import verify_access_token
-from modules.platform.src.controllers.auth_controller import AuthController
 
 
 def _seed_rbac(session: Session) -> None:
@@ -44,6 +43,7 @@ def _seed_rbac(session: Session) -> None:
         role = Role(role_name="tenant_admin", description="Tenant admin")
         session.add(role)
         session.flush()
+    assert role.role_id is not None
     for code, name in (
         ("agent:chat", "Agent chat"),
         ("posts:publish", "Publish"),
@@ -58,6 +58,7 @@ def _seed_rbac(session: Session) -> None:
             perm = Permission(permission_code=code, permission_name=name)
             session.add(perm)
             session.flush()
+        assert perm.permission_id is not None
         link = session.exec(
             select(RolePermission).where(
                 RolePermission.role_id == role.role_id,
@@ -85,7 +86,9 @@ def db_session(tmp_path):
     SQLModel.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, class_=Session)
 
+    # pyrefly: ignore [bad-assignment]
     db_mod._engine = engine
+    # pyrefly: ignore [bad-assignment]
     db_mod._SessionLocal = factory
 
     def _get_session():
@@ -157,7 +160,7 @@ def test_register_jwt_contains_tenant_and_role(db_session):
 
 def test_login_after_register(db_session):
     ctrl = AuthController()
-    payload, reg = _register(ctrl)
+    payload, _reg = _register(ctrl)
     login_resp = ctrl.login(
         {"username": payload["email"], "password": payload["password"]}
     )
@@ -185,9 +188,9 @@ def test_duplicate_email_validation(db_session):
     ctrl = AuthController()
     email = f"{_unique('dup')}@example.com"
     _register(ctrl, email=email, username=_unique("a"))
-    with pytest.raises(ValidationError) as exc:
+    with pytest.raises(ConflictError) as exc:
         _register(ctrl, email=email, username=_unique("b"), companyName="Other Co")
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 409
 
 
 def test_missing_company_name_validation(db_session):
@@ -213,16 +216,15 @@ def test_registration_failure_rolls_back_no_orphans(db_session):
     with patch(
         "modules.platform.src.controllers.auth_controller.bcrypt.hash",
         side_effect=RuntimeError("simulated user create failure"),
-    ):
-        with pytest.raises(RuntimeError, match="simulated"):
-            ctrl.register(
-                {
-                    "username": username,
-                    "email": email,
-                    "password": "SecurePass123!",
-                    "companyName": company,
-                }
-            )
+    ), pytest.raises(RuntimeError, match="simulated"):
+        ctrl.register(
+            {
+                "username": username,
+                "email": email,
+                "password": "SecurePass123!",
+                "companyName": company,
+            }
+        )
 
     with db_session() as session:
         assert session.exec(select(User).where(User.email == email)).first() is None

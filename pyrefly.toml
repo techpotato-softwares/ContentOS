@@ -1,0 +1,16 @@
+# Monorepo root: point Pyrefly/LSP at the API shared layer so `database` / `middleware` resolve.
+# Per-package config also lives at apps/api/pyrefly.toml.
+search-path = [
+  "apps/api/layers/shared/python/src",
+  "apps/api",
+  "apps/api/src",
+]
+disable-search-path-heuristics = true
+project-includes = [
+  "apps/api/layers/shared/python/src/**/*.py",
+  "apps/api/modules/**/*.py",
+  "apps/api/src/**/*.py",
+  "apps/api/tests/**/*.py",
+  "apps/api/scripts/**/*.py",
+]
+project-excludes = ["**/__pycache__", "**/.venv/**", "**/.pytest_cache/**"]

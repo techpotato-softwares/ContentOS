@@ -1,5 +1,8 @@
 # ContentOS local infrastructure
 # Start from apps/: docker compose up -d
+#
+# Mailpit UI (OTP inbox): http://127.0.0.1:8025
+# SMTP: 127.0.0.1:1025
 
 services:
   postgres:
@@ -24,6 +27,20 @@ services:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI inbox
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
       timeout: 3s
       retries: 5

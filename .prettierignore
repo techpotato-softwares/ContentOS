@@ -1,0 +1,29 @@
+# Dependencies & installs
+**/node_modules/
+package-lock.json
+**/package-lock.json
+
+# Build outputs
+**/dist/
+**/.next/
+**/out/
+**/build/
+**/coverage/
+apps/web/dev-dist/
+
+# Python / API / infra (formatted by Ruff)
+apps/api/
+infra/
+**/*.py
+**/.venv/
+
+# Generated / lock / cache
+**/*.tsbuildinfo
+**/cdk.out/
+**/.cdk.staging/
+**/.ruff_cache/
+**/.pytest_cache/
+
+# Misc
+**/*.min.js
+**/*.min.css
