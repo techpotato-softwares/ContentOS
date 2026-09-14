@@ -103,9 +103,10 @@ jobs:
         run: npm run build:marketing
 
       - name: Install CDK (Python) + CLI
+        working-directory: infra
         run: |
-          uv venv infra/.venv
-          uv pip install -r infra/requirements.txt
+          uv venv .venv
+          uv pip install -r requirements.txt
           npm install -g aws-cdk
 
       - name: Bootstrap CDK (idempotent)
