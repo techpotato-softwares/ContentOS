@@ -19,7 +19,7 @@ const cwd = path.resolve(root, relCwd)
 const result = spawnSync(command, args, {
   cwd,
   stdio: "inherit",
-  shell: true,
+  shell: process.platform === "win32",
   env: process.env,
 })
 

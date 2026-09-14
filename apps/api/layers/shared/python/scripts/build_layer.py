@@ -65,8 +65,7 @@ def main() -> None:
 
     if REQ.exists():
         cmd = [
-            sys.executable,
-            "-m",
+            "uv",
             "pip",
             "install",
             "-r",
@@ -79,10 +78,8 @@ def main() -> None:
         if not args.host:
             cmd.extend(
                 [
-                    "--platform",
+                    "--python-platform",
                     args.platform,
-                    "--implementation",
-                    "cp",
                     "--python-version",
                     args.python_version,
                     "--only-binary=:all:",
