@@ -21,12 +21,11 @@ if [[ "$major" -lt 3 || ( "$major" -eq 3 && "$minor" -lt 10 ) ]]; then
 fi
 
 if [[ ! -d .venv ]]; then
-  echo "==> Creating infra/.venv with $PYTHON_BIN ($ver)"
-  "$PYTHON_BIN" -m venv .venv
+  echo "==> Creating infra/.venv with uv"
+  uv venv
 fi
 
 # shellcheck disable=SC1091
 source .venv/bin/activate
-pip install -U pip
-pip install -r requirements.txt
-echo "==> infra venv ready ($PYTHON_BIN)"
+uv pip install -r requirements.txt
+echo "==> infra venv ready"
