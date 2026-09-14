@@ -59,10 +59,9 @@ export const authApi = createApi({
     }),
     exchangeGoogleCode: build.mutation<LoginResponse, { code: string }>({
       query: (body) => ({
-        url: "/api/auth/otp/verify",
+        url: "/api/auth/google/callback",
         method: "POST",
         body: {
-          email: body.email.trim().toLowerCase(),
           code: body.code.trim(),
         },
       }),
@@ -132,8 +131,7 @@ export const authApi = createApi({
         method: "POST",
         body: { token: body.token, password: body.password },
       }),
-      transformResponse: (r: unknown) =>
-        unwrapData<{ success?: boolean; message: string }>(r),
+      transformResponse: (r: unknown) => unwrapData<{ success?: boolean; message: string }>(r),
     }),
   }),
 })
