@@ -21,12 +21,11 @@ if [[ -z "$PYTHON_BIN" ]]; then
 fi
 
 if [[ ! -d .venv ]]; then
-  echo "==> Creating infra venv with $PYTHON_BIN"
-  "$PYTHON_BIN" -m venv .venv
+  echo "==> Creating infra venv with uv"
+  uv venv .venv
   # shellcheck disable=SC1091
   source .venv/bin/activate
-  pip install -U pip
-  pip install -r requirements.txt
+  uv pip install -r requirements.txt
 else
   # shellcheck disable=SC1091
   source .venv/bin/activate

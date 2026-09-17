@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 import passlib.hash as _passlib_hash
+
+# pyrefly: ignore [missing-module-attribute]
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
@@ -366,6 +368,7 @@ def _issue_auth_tokens(session, user: User) -> dict:
 
 def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
     """Purge OTP rows that are past the rate-limit retention window (or 7 days)."""
+    # pyrefly: ignore [deprecated]
     now = _utc_now()
     window = max(
         otp_util.otp_email_rate_limit()[1],
@@ -389,6 +392,7 @@ def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
 def _count_recent_otp_requests(
     session, *, email: str | None = None, ip: str | None = None, window_seconds: int
 ) -> int:
+    # pyrefly: ignore [deprecated]
     since = _utc_now() - timedelta(seconds=window_seconds)
     q = select(EmailOtpChallenge).where(EmailOtpChallenge.created_at >= since)
     if email:
@@ -493,10 +497,12 @@ class AuthController:
                 select(EmailOtpChallenge).where(
                     (EmailOtpChallenge.email == email)
                     & (EmailOtpChallenge.consumed_at == None)
+                    # pyrefly: ignore [deprecated]
                     & (EmailOtpChallenge.expires_at > _utc_now())
                 )
             ).all()
             for row in active:
+                # pyrefly: ignore [deprecated]
                 row.consumed_at = _utc_now()
                 session.add(row)
 
@@ -522,11 +528,6 @@ class AuthController:
             del code
 
             if not (isinstance(send_result, dict) and send_result.get("sent")):
-                reason = (
-                    (send_result or {}).get("reason")
-                    if isinstance(send_result, dict)
-                    else "unknown"
-                )
                 err = (
                     (send_result or {}).get("error")
                     if isinstance(send_result, dict)
@@ -603,6 +604,9 @@ class AuthController:
                 )
 
             if challenge.expires_at < _utc_now():
+            # pyrefly: ignore [deprecated]
+            if challenge.expires_at < _utc_now():
+                # pyrefly: ignore [deprecated]
                 challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
@@ -613,6 +617,7 @@ class AuthController:
                 )
 
             if challenge.attempts >= challenge.max_attempts:
+                # pyrefly: ignore [deprecated]
                 challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
@@ -627,6 +632,7 @@ class AuthController:
             ):
                 challenge.attempts += 1
                 if challenge.attempts >= challenge.max_attempts:
+                    # pyrefly: ignore [deprecated]
                     challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
@@ -644,6 +650,7 @@ class AuthController:
                 )
 
             # Success: consume so the code cannot be reused
+            # pyrefly: ignore [deprecated]
             challenge.consumed_at = _utc_now()
             session.add(challenge)
             session.commit()
@@ -836,8 +843,7 @@ class AuthController:
                 return create_success_response(
                     {
                         "success": True,
-                        "message": "Registered ??? check your email to verify your account",
-                        "message": "Registered — check your email to verify your account",
+                        "message": "Registered check your email to verify your account",
                         **tokens,
                         "user": _auth_user_dict(
                             user, role, permission_codes, modules
