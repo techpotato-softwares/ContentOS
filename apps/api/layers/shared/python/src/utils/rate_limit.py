@@ -7,6 +7,7 @@ import time
 from typing import Protocol
 
 from middleware.error_handler import RateLimitError
+
 from utils.logger import logger
 
 
@@ -145,8 +146,8 @@ class _DynamoStore:
 
 class _PostgresStore:
     def take(self, key: str, *, capacity: float, refill_per_sec: float, cost: float = 1.0) -> bool:
-        from sqlalchemy import text
         from database import get_session
+        from sqlalchemy import text
 
         now = time.time()
         with get_session() as session:

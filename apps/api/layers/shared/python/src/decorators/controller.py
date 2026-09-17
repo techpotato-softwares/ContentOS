@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from decorators.registry import route_registry
+
 
 def Controller(path: str = "/", lambda_name: str | None = None):
     def deco(cls):

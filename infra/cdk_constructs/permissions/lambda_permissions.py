@@ -5,9 +5,8 @@ from typing import Protocol
 
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
+from constructs import Construct
 
 
 class IPermissionProvider(Protocol):

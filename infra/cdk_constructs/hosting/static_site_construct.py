@@ -11,9 +11,8 @@ from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_s3_deployment as s3deploy
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
+from constructs import Construct
 
 # Rewrites /app SPA routes and marketing static-export folders to index.html.
 _SPA_APP_FUNCTION = """

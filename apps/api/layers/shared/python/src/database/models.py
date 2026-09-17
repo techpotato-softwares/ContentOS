@@ -2,10 +2,12 @@
 # SQLModel declares __tablename__ as a declared_attr descriptor; string overrides
 # are the documented API but trip Pyrefly's override check.
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Optional
-from sqlmodel import SQLModel, Field, Column
+
 from sqlalchemy import Text, UniqueConstraint
+from sqlmodel import Column, Field, SQLModel
 
 
 def _utcnow() -> datetime:

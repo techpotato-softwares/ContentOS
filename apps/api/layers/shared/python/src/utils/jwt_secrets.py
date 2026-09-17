@@ -1,10 +1,14 @@
 from __future__ import annotations
+
 import os
 import time
 from dataclasses import dataclass
-from utils.logger import logger
-from utils.app_env import is_production
+
 from config import get_app_config
+
+from utils.app_env import is_production
+from utils.logger import logger
+
 
 @dataclass
 class JwtSecrets:
@@ -23,6 +27,7 @@ def _local() -> JwtSecrets:
 
 def _from_secrets_manager(secret_id: str, region: str) -> JwtSecrets:
     import json
+
     import boto3
 
     client = boto3.client("secretsmanager", region_name=region)

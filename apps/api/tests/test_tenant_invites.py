@@ -24,17 +24,16 @@ os.environ["SES_FROM_EMAIL"] = "noreply@test.local"
 os.environ["INVITE_FRONTEND_URL"] = "http://localhost:5173"
 os.environ.pop("DATABASE_URL", None)
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session, SQLModel, select
-
 import database as db_mod
-from database.models import Role, RolePermission, Permission, Tenant, TenantInvite, User
-from middleware.error_handler import AppError, ConflictError, ForbiddenError
+from database.models import Role, Tenant, TenantInvite, User
+from middleware.error_handler import AppError, ConflictError
 from modules.platform.src.controllers.auth_controller import _ensure_platform_rbac
 from modules.tenants.src.controllers.invites_controller import InvitesController
 from passlib.hash import bcrypt
-from utils.tenant_invites import hash_invite_token, generate_invite_token
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session, SQLModel, select
+from utils.tenant_invites import generate_invite_token, hash_invite_token
 
 
 @pytest.fixture()
@@ -287,9 +286,8 @@ def test_cross_tenant_membership_blocked(db_session):
     with patch(
         "modules.tenants.src.controllers.invites_controller._optional_user",
         return_value=event["user"],
-    ):
-        with pytest.raises(ConflictError):
-            ctrl.accept_invite({"token": raw}, event=event)
+    ), pytest.raises(ConflictError):
+        ctrl.accept_invite({"token": raw}, event=event)
 
 
 def test_preview_has_no_token(db_session):

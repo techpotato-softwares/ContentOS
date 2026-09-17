@@ -7,10 +7,9 @@ from aws_cdk import aws_events_targets as targets
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_rds as rds
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
 from config.rds_config import RDSScheduleConfig
+from constructs import Construct
 from paths import API_ROOT
 
 

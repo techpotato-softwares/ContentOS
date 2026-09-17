@@ -20,12 +20,11 @@ os.environ["SES_ENABLED"] = "false"
 os.environ["SES_FROM_EMAIL"] = "noreply@contentos.local"
 os.environ.pop("DATABASE_URL", None)
 
+import database as db_mod
+from modules.platform.src.controllers.auth_controller import AuthController
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel
-
-import database as db_mod
-from modules.platform.src.controllers.auth_controller import AuthController
 
 DEMO_CODE = "482913"
 EMAIL = "otp.demo@contentos.local"
@@ -65,7 +64,7 @@ def main() -> None:
         captured["expires_minutes"] = expires_minutes
         print("\n========== OTP EMAIL (SES preview) ==========")
         print(f"To:      {to_email}")
-        print(f"Subject: Your ContentOS sign-in code")
+        print("Subject: Your ContentOS sign-in code")
         print(f"Body:    Your ContentOS sign-in code is: {code}")
         print(f"Expires: {expires_minutes} minutes")
         print("=============================================\n")

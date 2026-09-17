@@ -7,8 +7,6 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlmodel import select
-
 from database.models import Role, Tenant, TenantInvite, User
 from middleware.error_handler import (
     AppError,
@@ -17,6 +15,8 @@ from middleware.error_handler import (
     NotFoundError,
     ValidationError,
 )
+from sqlmodel import select
+
 from utils.logger import logger
 from utils.ses_mail import send_email
 

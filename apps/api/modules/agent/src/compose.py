@@ -4,12 +4,14 @@ Renders at 2× then downscales (LANCZOS) so type stays sharp on retina / LinkedI
 Left panel is a soft gradient so the subject on the right stays visible.
 """
 from __future__ import annotations
+
 import io
 import os
 from pathlib import Path
 from typing import Optional
+
 import httpx
-from PIL import Image, ImageDraw, ImageFont, ImageColor, ImageEnhance
+from PIL import Image, ImageColor, ImageDraw, ImageEnhance, ImageFont
 
 API_ROOT = Path(__file__).resolve().parents[3]
 MEDIA_ROOT = API_ROOT / "media"

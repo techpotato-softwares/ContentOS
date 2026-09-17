@@ -4,9 +4,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from passlib.hash import bcrypt
-from sqlmodel import select
-
 from database import get_session
 from database.models import Tenant, TenantInvite, User
 from decorators import Controller, Delete, Get, Post
@@ -19,6 +16,8 @@ from middleware.error_handler import (
     ValidationError,
     create_success_response,
 )
+from passlib.hash import bcrypt
+from sqlmodel import select
 from utils.tenant import require_user, resolve_tenant_id, write_audit
 from utils.tenant_invites import (
     accept_invite_for_user,

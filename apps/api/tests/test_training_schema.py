@@ -1,9 +1,9 @@
 from training.schema import (
-    TenantTrainingSchema,
     BrandVisualSection,
+    TenantTrainingSchema,
+    is_white_label_complete,
     render_context_pack,
     resolve_ui_theme,
-    is_white_label_complete,
 )
 
 

@@ -1,8 +1,8 @@
 """Create email_otp_challenges for Wave 1 passwordless login."""
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20260326_01_email_otp"
 down_revision = None

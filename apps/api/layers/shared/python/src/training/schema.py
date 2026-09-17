@@ -1,6 +1,8 @@
 """TenantTrainingSchema v1 — structured company records for consistent generation."""
 from __future__ import annotations
+
 from typing import Literal, Optional
+
 from pydantic import BaseModel, Field, field_validator
 
 

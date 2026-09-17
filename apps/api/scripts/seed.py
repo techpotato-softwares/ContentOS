@@ -5,6 +5,7 @@ Creates tables and seeds demo roles, permissions, superadmin/demo users.
 Production tenants sign up via POST /api/register (transactional; bootstraps RBAC).
 """
 from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
@@ -26,15 +27,16 @@ if env_path.exists():
 os.environ.setdefault("IS_LOCAL", "true")
 os.environ.setdefault("APP_NAME", "contentos")
 
+import json
+
+import database.models  # noqa: F401
+from database import get_session, init_db
+from database.models import Permission, Role, RolePermission, Tenant, User
 from passlib.hash import bcrypt
 from sqlmodel import select
-from database import init_db, get_session
-import database.models  # noqa: F401
-from database.models import Tenant, User, Role, Permission, RolePermission
-from training.schema import TenantTrainingSchema, CompanySection, BrandVisualSection
+from training.schema import BrandVisualSection, CompanySection, TenantTrainingSchema
 from utils.app_env import is_production
 from utils.seed_credentials import SEED_PASSWORD
-import json
 
 PERMS = [
     ("admin:tenants", "Manage all tenants"),
@@ -63,8 +65,8 @@ def main():
     init_db()
     # Ensure newer columns exist on existing DBs
     try:
-        from sqlalchemy import text
         from database import get_engine
+        from sqlalchemy import text
 
         with get_engine().begin() as conn:
             for col, typ in [

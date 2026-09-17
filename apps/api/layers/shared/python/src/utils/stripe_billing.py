@@ -5,10 +5,10 @@ import os
 from datetime import datetime, timezone
 from typing import Any, cast
 
+from database.models import StripeWebhookEvent, Tenant
+from middleware.error_handler import AppError, ValidationError
 from sqlmodel import Session, select
 
-from database.models import StripeWebhookEvent, Tenant
-from middleware.error_handler import AppError, NotFoundError, ValidationError
 from utils.ai_billing import apply_plan_to_tenant, assert_can_subscribe
 from utils.logger import logger
 from utils.stripe_secrets import (

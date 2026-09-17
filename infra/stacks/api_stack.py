@@ -5,10 +5,6 @@ import os
 
 from aws_cdk import RemovalPolicy, Stack, Tags
 from aws_cdk import aws_lambda as lambda_
-from constructs import Construct
-
-from config.environment import EnvironmentConfig
-from config.rds_config import get_rds_config
 from cdk_constructs.core.api_gateway_construct import ApiGatewayConstruct
 from cdk_constructs.core.lambda_construct import LambdaConstruct
 from cdk_constructs.core.scheduled_lambda_construct import (
@@ -25,6 +21,9 @@ from cdk_constructs.permissions.lambda_permissions import (
 from cdk_constructs.security.db_secrets_construct import DbSecretsConstruct
 from cdk_constructs.security.jwt_secrets_construct import JwtSecretsConstruct
 from cdk_constructs.storage.s3_construct import S3Construct
+from config.environment import EnvironmentConfig
+from config.rds_config import get_rds_config
+from constructs import Construct
 from paths import LAYER_BUNDLED, MARKETING_PATH, UI_BUILD_PATH
 from utils.manifest_reader import read_manifest
 
@@ -126,6 +125,10 @@ class ApiStack(Stack):
                 "SES_FROM_EMAIL",
                 os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app"),
             )
+            for key in ["EMAIL_TRANSPORT", "OTP_TTL_SECONDS", "OTP_MAX_ATTEMPTS", "OTP_CODE_LENGTH", "OTP_RATE_LIMIT_PER_EMAIL", "OTP_RATE_LIMIT_PER_IP", "OTP_RATE_WINDOW_SECONDS", "OTP_PEPPER"]:
+                val = os.environ.get(key)
+                if val:
+                    auth_fn.add_environment(key, val)
             auth_fn.add_to_role_policy(
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,

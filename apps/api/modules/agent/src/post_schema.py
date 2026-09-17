@@ -1,10 +1,11 @@
 """Structured LinkedIn post variant plans + deterministic validation."""
 from __future__ import annotations
+
 import json
 import re
 from typing import Any, List, Optional
-from pydantic import BaseModel, Field, field_validator
 
+from pydantic import BaseModel, Field, field_validator
 
 ANGLES = ("educational", "thought_leadership", "product_value")
 
@@ -160,7 +161,7 @@ def apply_banned_claims(plan: PostVariantPlan, banned: list[str]) -> PostVariant
         c = (claim or "").strip().lower()
         if c and c in blob:
             # Strip banned phrase from caption; keep structure
-            plan.caption = re.sub(re.escape(claim), "", plan.caption, flags=re.I).strip()
+            plan.caption = re.sub(re.escape(claim), "", plan.caption, flags=re.IGNORECASE).strip()
     return plan
 
 

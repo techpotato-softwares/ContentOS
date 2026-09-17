@@ -1,5 +1,6 @@
 """EventBridge weekly team performance snapshot (Amazon SES)."""
 from __future__ import annotations
+
 import json
 import os
 import sys

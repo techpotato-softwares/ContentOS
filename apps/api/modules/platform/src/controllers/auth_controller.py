@@ -4,34 +4,28 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 import passlib.hash as _passlib_hash
-from datetime import datetime, timedelta
-
-from passlib.hash import bcrypt
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 # passlib exposes bcrypt dynamically; getattr keeps runtime + type-checkers happy
-bcrypt = cast(Any, getattr(_passlib_hash, "bcrypt"))
+bcrypt = cast(Any, _passlib_hash.bcrypt)
 
 from database import get_session
-from database.models import Permission, Role, RolePermission, Tenant, User
-from decorators import Controller, Get, Post
-from decorators.auth_decorators import ApiPublic, RequirePermission
 from database.models import (
-    User,
+    EmailOtpChallenge,
+    Permission,
     Role,
     RolePermission,
-    Permission,
     Tenant,
-    EmailOtpChallenge,
+    User,
 )
-from utils.webtoken import generate_tokens
-from utils import email_otp as otp_util
+from decorators import Controller, Get, Post
+from decorators.auth_decorators import ApiPublic, RequirePermission
 from middleware.error_handler import (
     AppError,
     ConflictError,
@@ -39,6 +33,7 @@ from middleware.error_handler import (
     create_success_response,
 )
 from training.schema import BrandVisualSection, CompanySection, TenantTrainingSchema
+from utils import email_otp as otp_util
 from utils.auth_email import send_password_reset_email, send_verification_email
 from utils.auth_tokens import (
     PURPOSE_EMAIL_VERIFY,
@@ -371,7 +366,7 @@ def _issue_auth_tokens(session, user: User) -> dict:
 
 def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
     """Purge OTP rows that are past the rate-limit retention window (or 7 days)."""
-    now = datetime.utcnow()
+    now = _utc_now()
     window = max(
         otp_util.otp_email_rate_limit()[1],
         otp_util.otp_ip_rate_limit()[1],
@@ -394,7 +389,7 @@ def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
 def _count_recent_otp_requests(
     session, *, email: str | None = None, ip: str | None = None, window_seconds: int
 ) -> int:
-    since = datetime.utcnow() - timedelta(seconds=window_seconds)
+    since = _utc_now() - timedelta(seconds=window_seconds)
     q = select(EmailOtpChallenge).where(EmailOtpChallenge.created_at >= since)
     if email:
         q = q.where(EmailOtpChallenge.email == email)
@@ -455,7 +450,7 @@ class AuthController:
         with get_session() as session:
             user = session.exec(
                 select(User).where(
-                    (User.email == email) & (User.is_active == True)  # noqa: E712
+                    (User.email == email) & (User.is_active == True)
                 )
             ).first()
             if not user:
@@ -497,12 +492,12 @@ class AuthController:
             active = session.exec(
                 select(EmailOtpChallenge).where(
                     (EmailOtpChallenge.email == email)
-                    & (EmailOtpChallenge.consumed_at == None)  # noqa: E711
-                    & (EmailOtpChallenge.expires_at > datetime.utcnow())
+                    & (EmailOtpChallenge.consumed_at == None)
+                    & (EmailOtpChallenge.expires_at > _utc_now())
                 )
             ).all()
             for row in active:
-                row.consumed_at = datetime.utcnow()
+                row.consumed_at = _utc_now()
                 session.add(row)
 
             code = otp_util.generate_otp_code()
@@ -580,7 +575,7 @@ class AuthController:
         with get_session() as session:
             user = session.exec(
                 select(User).where(
-                    (User.email == email) & (User.is_active == True)  # noqa: E712
+                    (User.email == email) & (User.is_active == True)
                 )
             ).first()
             if not user:
@@ -595,7 +590,7 @@ class AuthController:
                 .where(
                     (EmailOtpChallenge.email == email)
                     & (EmailOtpChallenge.purpose == "login")
-                    & (EmailOtpChallenge.consumed_at == None)  # noqa: E711
+                    & (EmailOtpChallenge.consumed_at == None)
                 )
                 .order_by(EmailOtpChallenge.created_at.desc())  # type: ignore[arg-type]
             ).first()
@@ -607,8 +602,8 @@ class AuthController:
                     "OTP_NOT_FOUND",
                 )
 
-            if challenge.expires_at < datetime.utcnow():
-                challenge.consumed_at = datetime.utcnow()
+            if challenge.expires_at < _utc_now():
+                challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
                 raise AppError(
@@ -618,7 +613,7 @@ class AuthController:
                 )
 
             if challenge.attempts >= challenge.max_attempts:
-                challenge.consumed_at = datetime.utcnow()
+                challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
                 raise AppError(
@@ -632,7 +627,7 @@ class AuthController:
             ):
                 challenge.attempts += 1
                 if challenge.attempts >= challenge.max_attempts:
-                    challenge.consumed_at = datetime.utcnow()
+                    challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
                 remaining = max(0, challenge.max_attempts - challenge.attempts)
@@ -649,7 +644,7 @@ class AuthController:
                 )
 
             # Success: consume so the code cannot be reused
-            challenge.consumed_at = datetime.utcnow()
+            challenge.consumed_at = _utc_now()
             session.add(challenge)
             session.commit()
 
@@ -896,7 +891,6 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
-                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
             # Always same message (enumeration-safe)
@@ -956,7 +950,6 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
-                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
         return create_success_response(out)
