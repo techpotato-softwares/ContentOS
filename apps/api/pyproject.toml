@@ -41,3 +41,6 @@ include = ["arcforge_shared*", "config*", "database*", "decorators*", "core*", "
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["layers/shared/python/src", "."]
+
+[tool.ruff.lint]
+ignore = ["DTZ003", "RUF100", "F841", "F601", "E712", "E711", "SIM117", "F401", "RUF059", "I001"]

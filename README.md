@@ -199,7 +199,7 @@ Stop with `Ctrl+C` in each terminal. After changing `apps/api/.env`, restart `de
 
 | Script                                           | Description                                                                     |
 | ------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `npm run install:api`                            | Create `apps/api/.venv` and install Python package                              |
+| `npm run install:api`                            | Sync `apps/api` python dependencies with `uv`                                   |
 | `npm run install:web`                            | `npm install` in `apps/web`                                                     |
 | `npm run install:marketing`                      | `npm install` in `apps/marketing`                                               |
 | `npm run install:infra`                          | CDK Python venv                                                                 |
@@ -285,7 +285,7 @@ See [`infra/README.md`](infra/README.md) for Lambda names and DB wiring.
 
 | Problem                          | What to try                                                                                                                    |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `python: command not found`      | Root scripts use `apps/api/.venv/bin/python` — run `npm run install:api` first                                                 |
+| `python: command not found`      | Root scripts use `uv run python` — run `npm run install:api` first                                                             |
 | DB auth fails / password has `@` | Use `DB_*` fields; app URL-encodes them. Don’t put raw `@` in `DATABASE_URL` unencoded                                         |
 | Images 404 in UI                 | Ensure API is up; Vite proxies `/media`. Restart `dev:web` after proxy changes                                                 |
 | Generate 502 / OpenAI errors     | Check key, image model, size, and org rate limits                                                                              |

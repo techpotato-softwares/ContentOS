@@ -4,34 +4,28 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 import passlib.hash as _passlib_hash
-from datetime import datetime, timedelta
-
-from passlib.hash import bcrypt
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 # passlib exposes bcrypt dynamically; getattr keeps runtime + type-checkers happy
-bcrypt = cast(Any, getattr(_passlib_hash, "bcrypt"))
+bcrypt = cast(Any, _passlib_hash.bcrypt)
 
 from database import get_session
-from database.models import Permission, Role, RolePermission, Tenant, User
-from decorators import Controller, Get, Post
-from decorators.auth_decorators import ApiPublic, RequirePermission
 from database.models import (
-    User,
+    EmailOtpChallenge,
+    Permission,
     Role,
     RolePermission,
-    Permission,
     Tenant,
-    EmailOtpChallenge,
+    User,
 )
-from utils.webtoken import generate_tokens
-from utils import email_otp as otp_util
+from decorators import Controller, Get, Post
+from decorators.auth_decorators import ApiPublic, RequirePermission
 from middleware.error_handler import (
     AppError,
     ConflictError,
@@ -39,6 +33,7 @@ from middleware.error_handler import (
     create_success_response,
 )
 from training.schema import BrandVisualSection, CompanySection, TenantTrainingSchema
+from utils import email_otp as otp_util
 from utils.auth_email import send_password_reset_email, send_verification_email
 from utils.auth_tokens import (
     PURPOSE_EMAIL_VERIFY,
@@ -455,7 +450,7 @@ class AuthController:
         with get_session() as session:
             user = session.exec(
                 select(User).where(
-                    (User.email == email) & (User.is_active == True)  # noqa: E712
+                    (User.email == email) & (User.is_active == True)
                 )
             ).first()
             if not user:
@@ -497,7 +492,7 @@ class AuthController:
             active = session.exec(
                 select(EmailOtpChallenge).where(
                     (EmailOtpChallenge.email == email)
-                    & (EmailOtpChallenge.consumed_at == None)  # noqa: E711
+                    & (EmailOtpChallenge.consumed_at == None)
                     & (EmailOtpChallenge.expires_at > datetime.utcnow())
                 )
             ).all()
@@ -527,7 +522,7 @@ class AuthController:
             del code
 
             if not (isinstance(send_result, dict) and send_result.get("sent")):
-                reason = (
+                (
                     (send_result or {}).get("reason")
                     if isinstance(send_result, dict)
                     else "unknown"
@@ -580,7 +575,7 @@ class AuthController:
         with get_session() as session:
             user = session.exec(
                 select(User).where(
-                    (User.email == email) & (User.is_active == True)  # noqa: E712
+                    (User.email == email) & (User.is_active == True)
                 )
             ).first()
             if not user:
@@ -595,7 +590,7 @@ class AuthController:
                 .where(
                     (EmailOtpChallenge.email == email)
                     & (EmailOtpChallenge.purpose == "login")
-                    & (EmailOtpChallenge.consumed_at == None)  # noqa: E711
+                    & (EmailOtpChallenge.consumed_at == None)
                 )
                 .order_by(EmailOtpChallenge.created_at.desc())  # type: ignore[arg-type]
             ).first()
@@ -841,7 +836,6 @@ class AuthController:
                 return create_success_response(
                     {
                         "success": True,
-                        "message": "Registered ??? check your email to verify your account",
                         "message": "Registered — check your email to verify your account",
                         **tokens,
                         "user": _auth_user_dict(
@@ -896,7 +890,6 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
-                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
             # Always same message (enumeration-safe)
@@ -956,7 +949,6 @@ class AuthController:
                     if e.code == "RATE_LIMITED":
                         raise
                     session.rollback()
-                except Exception:  # noqa: BLE001 ??? enumeration-safe; never leak mail failures
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
         return create_success_response(out)
