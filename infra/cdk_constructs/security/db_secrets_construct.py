@@ -13,9 +13,8 @@ import json
 from aws_cdk import CfnOutput, RemovalPolicy
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_secretsmanager as secretsmanager
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
+from constructs import Construct
 
 
 class DbSecretsConstruct(Construct):

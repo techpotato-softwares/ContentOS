@@ -366,7 +366,8 @@ def _issue_auth_tokens(session, user: User) -> dict:
 
 def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
     """Purge OTP rows that are past the rate-limit retention window (or 7 days)."""
-    now = datetime.utcnow()
+    # pyrefly: ignore [deprecated]
+    now = _utc_now()
     window = max(
         otp_util.otp_email_rate_limit()[1],
         otp_util.otp_ip_rate_limit()[1],
@@ -389,7 +390,8 @@ def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
 def _count_recent_otp_requests(
     session, *, email: str | None = None, ip: str | None = None, window_seconds: int
 ) -> int:
-    since = datetime.utcnow() - timedelta(seconds=window_seconds)
+    # pyrefly: ignore [deprecated]
+    since = _utc_now() - timedelta(seconds=window_seconds)
     q = select(EmailOtpChallenge).where(EmailOtpChallenge.created_at >= since)
     if email:
         q = q.where(EmailOtpChallenge.email == email)
@@ -497,7 +499,8 @@ class AuthController:
                 )
             ).all()
             for row in active:
-                row.consumed_at = datetime.utcnow()
+                # pyrefly: ignore [deprecated]
+                row.consumed_at = _utc_now()
                 session.add(row)
 
             code = otp_util.generate_otp_code()
@@ -602,8 +605,11 @@ class AuthController:
                     "OTP_NOT_FOUND",
                 )
 
-            if challenge.expires_at < datetime.utcnow():
-                challenge.consumed_at = datetime.utcnow()
+            if challenge.expires_at < _utc_now():
+            # pyrefly: ignore [deprecated]
+            if challenge.expires_at < _utc_now():
+                # pyrefly: ignore [deprecated]
+                challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
                 raise AppError(
@@ -613,7 +619,8 @@ class AuthController:
                 )
 
             if challenge.attempts >= challenge.max_attempts:
-                challenge.consumed_at = datetime.utcnow()
+                # pyrefly: ignore [deprecated]
+                challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
                 raise AppError(
@@ -627,7 +634,8 @@ class AuthController:
             ):
                 challenge.attempts += 1
                 if challenge.attempts >= challenge.max_attempts:
-                    challenge.consumed_at = datetime.utcnow()
+                    # pyrefly: ignore [deprecated]
+                    challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
                 remaining = max(0, challenge.max_attempts - challenge.attempts)
@@ -644,7 +652,8 @@ class AuthController:
                 )
 
             # Success: consume so the code cannot be reused
-            challenge.consumed_at = datetime.utcnow()
+            # pyrefly: ignore [deprecated]
+            challenge.consumed_at = _utc_now()
             session.add(challenge)
             session.commit()
 

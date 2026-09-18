@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from typing import Any
+
+from utils.webtoken import JWTPayload, verify_access_token
+
 from middleware.error_handler import AppError, create_error_response
-from utils.webtoken import verify_access_token, JWTPayload
 
 
 def _normalize_user(user: JWTPayload) -> JWTPayload:
@@ -13,7 +16,7 @@ def _normalize_user(user: JWTPayload) -> JWTPayload:
     return normalized  # type: ignore[return-value]
 
 
-def auth_middleware(event: dict) -> dict | dict:
+def auth_middleware(event: dict) -> dict:
     """Return event with user or an API Gateway error response."""
     try:
         headers = event.get("headers") or {}

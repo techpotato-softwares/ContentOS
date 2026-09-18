@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import SQLModel, Session
+from sqlmodel import Session, SQLModel
 
 _engine = None
 _SessionLocal = None

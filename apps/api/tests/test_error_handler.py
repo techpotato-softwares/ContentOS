@@ -1,9 +1,16 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "layers/shared/python/src"))
 
-from middleware.error_handler import ForbiddenError, ConflictError, create_error_response
 import json
+
+from middleware.error_handler import (
+    ConflictError,
+    ForbiddenError,
+    create_error_response,
+)
+
 
 def test_forbidden():
     err = ForbiddenError("nope")

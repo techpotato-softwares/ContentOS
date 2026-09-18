@@ -1,5 +1,6 @@
 import re
 
+
 def match(full: str, path: str):
     pattern = re.sub(r"\{([^}]+)\}", r"(?P<\1>[^/]+)", full)
     m = re.match(f"^{pattern}$", path)

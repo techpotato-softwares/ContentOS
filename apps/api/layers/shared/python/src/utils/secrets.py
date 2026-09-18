@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 import json
 import os
 import time
-from config import get_app_config, get_local_database_config, build_database_url, DatabaseConfig
-from utils.logger import logger
+
+from config import (
+    DatabaseConfig,
+    build_database_url,
+    get_app_config,
+    get_local_database_config,
+)
 
 _cache: DatabaseConfig | None = None
 _expiry = 0

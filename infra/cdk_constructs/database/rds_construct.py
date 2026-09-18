@@ -8,10 +8,9 @@ from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_rds as rds
 from aws_cdk import aws_secretsmanager as secretsmanager
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
 from config.rds_config import RDSEnvironmentConfig, get_rds_config
+from constructs import Construct
 
 
 class RDSConstruct(Construct):

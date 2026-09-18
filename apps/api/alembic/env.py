@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import os
 import sys
 from logging.config import fileConfig
+
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
@@ -19,7 +21,7 @@ if os.path.exists(_env_path):
         k, v = k.strip(), v.strip().strip('"').strip("'")
         os.environ.setdefault(k, v)
 
-from database.models import SQLModel  # noqa: E402
+from database.models import SQLModel
 from sqlmodel import SQLModel as _SM  # noqa: F401
 
 config = context.config
@@ -30,13 +32,14 @@ target_metadata = SQLModel.metadata
 
 
 def _resolve_url() -> str:
+    import urllib.parse
     if os.environ.get("DATABASE_URL"):
         return os.environ["DATABASE_URL"]
     host = os.environ.get("DB_HOST", "127.0.0.1")
     port = os.environ.get("DB_PORT", "5433")
     name = os.environ.get("DB_NAME", "contentos")
-    user = os.environ.get("DB_USERNAME", "postgres")
-    password = os.environ.get("DB_PASSWORD", "secret")
+    user = urllib.parse.quote_plus(os.environ.get("DB_USERNAME", "postgres"))
+    password = urllib.parse.quote_plus(os.environ.get("DB_PASSWORD", "secret"))
     ssl = os.environ.get("DB_SSL", "false").lower() == "true"
     q = "?sslmode=require" if ssl else ""
     return f"postgresql://{user}:{password}@{host}:{port}/{name}{q}"

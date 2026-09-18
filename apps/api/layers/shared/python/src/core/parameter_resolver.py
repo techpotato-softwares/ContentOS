@@ -1,7 +1,9 @@
 from __future__ import annotations
-import json
+
 import inspect
+import json
 from typing import Any
+
 
 def resolve_parameters(fn, event: dict, path_params: dict[str, str]) -> list[Any]:
     """Resolve args by parameter names / annotations (simple convention)."""

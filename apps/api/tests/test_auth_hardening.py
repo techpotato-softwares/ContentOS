@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -20,8 +19,8 @@ from utils.rate_limit import (
     reset_rate_limit_store_for_tests,
 )
 from utils.seed_credentials import (
-    reject_seed_login_in_production,
     SEED_PASSWORD,
+    reject_seed_login_in_production,
 )
 
 

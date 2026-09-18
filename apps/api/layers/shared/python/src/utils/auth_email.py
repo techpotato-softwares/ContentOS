@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+
 from utils.auth_tokens import frontend_base_url, is_local
 from utils.logger import logger
 from utils.ses_mail import send_email
