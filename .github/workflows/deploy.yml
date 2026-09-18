@@ -32,6 +32,15 @@ jobs:
       CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
       CLOUDFRONT_CERTIFICATE_ARN: ${{ vars.CLOUDFRONT_CERTIFICATE_ARN }}
       SES_FROM_EMAIL: ${{ vars.SES_FROM_EMAIL }}
+      EMAIL_TRANSPORT: ${{ vars.EMAIL_TRANSPORT || 'ses' }}
+      SES_ENABLED: ${{ vars.SES_ENABLED || 'true' }}
+      OTP_TTL_SECONDS: ${{ vars.OTP_TTL_SECONDS || '600' }}
+      OTP_MAX_ATTEMPTS: ${{ vars.OTP_MAX_ATTEMPTS || '5' }}
+      OTP_CODE_LENGTH: ${{ vars.OTP_CODE_LENGTH || '6' }}
+      OTP_RATE_LIMIT_PER_EMAIL: ${{ vars.OTP_RATE_LIMIT_PER_EMAIL || '5' }}
+      OTP_RATE_LIMIT_PER_IP: ${{ vars.OTP_RATE_LIMIT_PER_IP || '20' }}
+      OTP_RATE_WINDOW_SECONDS: ${{ vars.OTP_RATE_WINDOW_SECONDS || '900' }}
+      OTP_PEPPER: ${{ secrets.OTP_PEPPER }}
 
     steps:
       - name: Checkout

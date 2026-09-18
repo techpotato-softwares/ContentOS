@@ -1,8 +1,11 @@
 from __future__ import annotations
+
 import os
+
 from decorators import Controller, Post
-from decorators.auth_decorators import RequirePermission, RequireModule
+from decorators.auth_decorators import RequireModule, RequirePermission
 from middleware.error_handler import create_success_response
+
 
 class AIProvider:
     def chat(self, message: str) -> dict:

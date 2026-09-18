@@ -1,17 +1,18 @@
 """AI providers for chat + LinkedIn image post generation."""
 from __future__ import annotations
+
 import base64
 import json
 import os
 import re
 import uuid
 from pathlib import Path
-import httpx
-from utils.logger import logger
-from utils.tenant import tenant_s3_prefix
-from utils.s3 import get_s3_config
-from middleware.error_handler import AppError
 
+import httpx
+from middleware.error_handler import AppError
+from utils.logger import logger
+from utils.s3 import get_s3_config
+from utils.tenant import tenant_s3_prefix
 
 SYSTEM_STANCE = """You are ContentOS, a LinkedIn content assistant for a company tenant.
 Use COMPANY CONTEXT for brand voice, colors, and known facts so posts stay consistent.
@@ -38,7 +39,7 @@ def caption_length_rule(preference: str | None = None) -> str:
 
 
 def _length_pref_from_pack(context_pack: str) -> str:
-    m = re.search(r"Length:\s*(\w+)", context_pack or "", re.I)
+    m = re.search(r"Length:\s*(\w+)", context_pack or "", re.IGNORECASE)
     if m:
         return m.group(1).strip().lower()
     return "medium"
@@ -1146,7 +1147,7 @@ def _parse_variants_json(text: str) -> list[dict]:
     from modules.agent.src.post_schema import parse_variant_plans
 
     text = _strip_fences(text)
-    m = re.search(r"\[.*\]", text, re.S)
+    m = re.search(r"\[.*\]", text, re.DOTALL)
     raw = m.group(0) if m else text
     try:
         data = json.loads(raw)
@@ -1169,7 +1170,7 @@ def _parse_variants_json(text: str) -> list[dict]:
 
 def _parse_json_array(text: str) -> list:
     text = _strip_fences(text)
-    m = re.search(r"\[.*\]", text, re.S)
+    m = re.search(r"\[.*\]", text, re.DOTALL)
     raw = m.group(0) if m else text
     try:
         data = json.loads(raw)
@@ -1182,7 +1183,7 @@ def _parse_json_array(text: str) -> list:
 
 def _parse_json_object(text: str) -> dict:
     text = _strip_fences(text)
-    m = re.search(r"\{.*\}", text, re.S)
+    m = re.search(r"\{.*\}", text, re.DOTALL)
     raw = m.group(0) if m else text
     try:
         data = json.loads(raw)

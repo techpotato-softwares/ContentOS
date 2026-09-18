@@ -6,6 +6,7 @@ From apps/api/:
   uvicorn src.dev_server:app --reload --port 4001
 """
 from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
@@ -28,19 +29,17 @@ if env_path.exists():
         k, v = k.strip(), v.strip().strip('"').strip("'")
         os.environ[k] = v
 
+import modules.agent.lambdas.agent
+import modules.platform.lambdas.auth
+import modules.publishing.lambdas.publishing
+import modules.tenants.lambdas.tenants  # noqa: F401
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
-import modules.platform.lambdas.auth  # noqa: F401
-import modules.tenants.lambdas.tenants  # noqa: F401
-import modules.agent.lambdas.agent  # noqa: F401
-import modules.publishing.lambdas.publishing  # noqa: F401
-
-from modules.platform.lambdas.auth import handler as auth_handler
-from modules.tenants.lambdas.tenants import handler as tenants_handler
 from modules.agent.lambdas.agent import handler as agent_handler
+from modules.platform.lambdas.auth import handler as auth_handler
 from modules.publishing.lambdas.publishing import handler as publishing_handler
+from modules.tenants.lambdas.tenants import handler as tenants_handler
 
 HANDLERS = {
     "auth": auth_handler,
@@ -102,8 +101,9 @@ def dev_mailbox():
     """Local OTP inbox UI (IS_LOCAL only)."""
     if os.environ.get("IS_LOCAL") != "true":
         return Response(content="Not available", status_code=404)
-    from utils.local_mailbox import extract_otp_codes, list_messages
     from html import escape
+
+    from utils.local_mailbox import extract_otp_codes, list_messages
 
     messages = list_messages(40)
     cards = []

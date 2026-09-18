@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def _method(method: str):
     def factory(path: str = "/"):
         def deco(fn):

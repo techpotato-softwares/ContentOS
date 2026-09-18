@@ -25,16 +25,15 @@ os.environ["OTP_RATE_LIMIT_PER_EMAIL"] = "3"
 os.environ["OTP_RATE_WINDOW_SECONDS"] = "900"
 os.environ.pop("DATABASE_URL", None)
 
+import database as db_mod
+from database.models import EmailOtpChallenge
+from middleware.error_handler import AppError, ValidationError
+from modules.platform.src.controllers.auth_controller import AuthController
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, select
-
-import database as db_mod
-from database.models import EmailOtpChallenge, User
-from middleware.error_handler import AppError, ValidationError
-from utils.webtoken import verify_access_token
 from utils import email_otp as otp_util
-from modules.platform.src.controllers.auth_controller import AuthController
+from utils.webtoken import verify_access_token
 
 
 @pytest.fixture()

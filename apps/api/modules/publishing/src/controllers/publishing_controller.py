@@ -1,21 +1,27 @@
 """LinkedIn OAuth (member + company page) + review gate + publish."""
 from __future__ import annotations
+
 import base64
 import io
 import json
 import os
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
+
 import httpx
-from sqlmodel import select, col
-from decorators import Controller, Get, Post
-from decorators.auth_decorators import RequirePermission, RequireModule, ApiPublic
 from database import get_session
 from database.models import ContentPost, SocialAccount
-from middleware.error_handler import NotFoundError, ValidationError, AppError, create_success_response
-from utils.tenant import resolve_tenant_id, write_audit, is_super_admin, require_user
+from decorators import Controller, Get, Post
+from decorators.auth_decorators import ApiPublic, RequireModule, RequirePermission
+from middleware.error_handler import (
+    AppError,
+    NotFoundError,
+    ValidationError,
+    create_success_response,
+)
+from sqlmodel import col, select
 from utils.onboarding import complete_onboarding_step
-
+from utils.tenant import is_super_admin, require_user, resolve_tenant_id, write_audit
 
 MEMBER_SCOPES = "openid profile w_member_social"
 ORG_SCOPES = (
@@ -35,8 +41,8 @@ def _utcnow() -> datetime:
 def _ensure_social_account_columns():
     """Add dual-account columns / unique constraint on existing DBs."""
     try:
-        from sqlalchemy import text
         from database import get_engine
+        from sqlalchemy import text
 
         with get_engine().begin() as conn:
             for name, typ in [
@@ -159,7 +165,7 @@ def _get_account(session, tenant_id: int, kind: str, active_only: bool = False):
         SocialAccount.account_kind == kind,
     )
     if active_only:
-        q = q.where(SocialAccount.is_active == True)  # noqa: E712
+        q = q.where(SocialAccount.is_active == True)
     return session.exec(q).first()
 
 
@@ -722,8 +728,8 @@ class PublishingController:
         tid = resolve_tenant_id(user)
         data = data or {}
         with get_session() as session:
-            from utils.auth_tokens import ensure_auth_schema, require_email_verified
             from database.models import User as UserModel
+            from utils.auth_tokens import ensure_auth_schema, require_email_verified
 
             ensure_auth_schema(session)
             actor = session.get(UserModel, int(user.get("userId") or 0))
@@ -789,9 +795,7 @@ class PublishingController:
                 # Text research posts: caption (+ optional supporting image)
                 # Image creatives: still publish caption; attach image when URL is fetchable
                 image_for_share = None
-                if fmt == "text" and post.image_url:
-                    image_for_share = post.image_url
-                elif fmt == "image" and post.image_url and not post.image_url.startswith("data:"):
+                if fmt == "text" and post.image_url or fmt == "image" and post.image_url and not post.image_url.startswith("data:"):
                     image_for_share = post.image_url
                 linkedin_id = _linkedin_ugc_publish(
                     access, author_urn, post.caption, image_for_share
@@ -830,8 +834,8 @@ class PublishingController:
         tid = resolve_tenant_id(user)
         data = data or {}
         with get_session() as session:
-            from utils.auth_tokens import ensure_auth_schema, require_email_verified
             from database.models import User as UserModel
+            from utils.auth_tokens import ensure_auth_schema, require_email_verified
 
             ensure_auth_schema(session)
             actor = session.get(UserModel, int(user.get("userId") or 0))

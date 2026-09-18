@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
-
 from middleware.error_handler import AppError
 
 

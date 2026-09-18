@@ -603,6 +603,7 @@ class AuthController:
                     "OTP_NOT_FOUND",
                 )
 
+            if challenge.expires_at < _utc_now():
             # pyrefly: ignore [deprecated]
             if challenge.expires_at < _utc_now():
                 # pyrefly: ignore [deprecated]

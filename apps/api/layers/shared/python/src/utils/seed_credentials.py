@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from middleware.error_handler import AppError
+
 from utils.app_env import is_production
 
 # Matches apps/api/scripts/seed.py

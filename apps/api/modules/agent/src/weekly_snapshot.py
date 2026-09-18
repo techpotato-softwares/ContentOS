@@ -1,11 +1,13 @@
 """Build and send weekly team performance snapshot emails via SES."""
 from __future__ import annotations
+
 from datetime import datetime, timedelta
-from sqlmodel import select
+
 from database import get_session
-from database.models import Tenant, User, Role, ContentPost, GenerationBatch, AuditLog
-from utils.ses_mail import send_email
+from database.models import AuditLog, ContentPost, GenerationBatch, Role, Tenant, User
+from sqlmodel import select
 from utils.logger import logger
+from utils.ses_mail import send_email
 
 
 def _week_window(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -29,7 +31,7 @@ def collect_tenant_stats(session, tenant_id: int, start: datetime, end: datetime
     upcoming = session.exec(
         select(ContentPost).where(
             ContentPost.tenant_id == tenant_id,
-            ContentPost.scheduled_at != None,  # noqa: E711
+            ContentPost.scheduled_at != None,
         )
     ).all()
     scheduled = [
@@ -109,7 +111,7 @@ def _admin_emails(session, tenant_id: int) -> list[str]:
     users = session.exec(
         select(User).where(
             User.tenant_id == tenant_id,
-            User.is_active == True,  # noqa: E712
+            User.is_active == True,
         )
     ).all()
     emails = []
@@ -182,7 +184,7 @@ def send_weekly_snapshots(*, tenant_id: int | None = None) -> dict:
     start, end = _week_window()
     results = []
     with get_session() as session:
-        q = select(Tenant).where(Tenant.is_active == True)  # noqa: E712
+        q = select(Tenant).where(Tenant.is_active == True)
         if tenant_id is not None:
             q = q.where(Tenant.tenant_id == tenant_id)
         tenants = session.exec(q).all()

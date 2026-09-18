@@ -4,9 +4,8 @@ from __future__ import annotations
 from aws_cdk import CfnOutput, Duration
 from aws_cdk import aws_apigateway as apigateway
 from aws_cdk import aws_lambda as lambda_
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
+from constructs import Construct
 from utils.manifest_reader import AppManifest, RouteManifestEntry
 
 CORS_RESPONSE_HEADERS = {
