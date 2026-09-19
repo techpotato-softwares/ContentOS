@@ -58,13 +58,13 @@ export default {
 
   // Critical Ruff rules only (undefined names / syntax) — style debt is not a commit gate yet
   "apps/api/**/*.py": (files) => [
-    `node scripts/run-ruff.mjs check --config apps/api/pyproject.toml ${files
+    `uv run --project apps/api ruff check --config apps/api/pyproject.toml ${files
       .map(quote)
       .join(" ")}`,
   ],
 
   "infra/**/*.py": (files) => [
-    `node scripts/run-ruff.mjs check --config apps/api/pyproject.toml ${files
+    `uv run --project apps/api ruff check --config apps/api/pyproject.toml ${files
       .map(quote)
       .join(" ")}`,
   ],

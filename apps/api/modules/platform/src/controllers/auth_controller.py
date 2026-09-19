@@ -8,8 +8,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 import passlib.hash as _passlib_hash
-
-# pyrefly: ignore [missing-module-attribute]
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
@@ -497,8 +495,7 @@ class AuthController:
                 select(EmailOtpChallenge).where(
                     (EmailOtpChallenge.email == email)
                     & (EmailOtpChallenge.consumed_at == None)
-                    # pyrefly: ignore [deprecated]
-                    & (EmailOtpChallenge.expires_at > _utc_now())
+                    & (EmailOtpChallenge.expires_at > datetime.utcnow())
                 )
             ).all()
             for row in active:
@@ -528,6 +525,11 @@ class AuthController:
             del code
 
             if not (isinstance(send_result, dict) and send_result.get("sent")):
+                (
+                    (send_result or {}).get("reason")
+                    if isinstance(send_result, dict)
+                    else "unknown"
+                )
                 err = (
                     (send_result or {}).get("error")
                     if isinstance(send_result, dict)
@@ -843,7 +845,7 @@ class AuthController:
                 return create_success_response(
                     {
                         "success": True,
-                        "message": "Registered check your email to verify your account",
+                        "message": "Registered — check your email to verify your account",
                         **tokens,
                         "user": _auth_user_dict(
                             user, role, permission_codes, modules
