@@ -1128,7 +1128,7 @@ def _fetch_image_bytes(url: str) -> bytes | None:
         if alt.exists():
             return alt.read_bytes()
         return None
-    if url.startswith("http://") or url.startswith("https://"):
+    if url.startswith(("http://", "https://")):
         try:
             with httpx.Client(timeout=60.0) as client:
                 r = client.get(url)

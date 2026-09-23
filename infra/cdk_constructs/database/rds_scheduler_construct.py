@@ -95,8 +95,8 @@ class RDSSchedulerConstruct(Construct):
                     "rds:DescribeDBInstances",
                 ],
                 resources=[
-                    f"arn:aws:rds:{Stack.of(self).region}:*:db:"
-                    f"{rds_instance.instance_identifier}"
+                    (f"arn:aws:rds:{Stack.of(self).region}:*:db:"
+                    f"{rds_instance.instance_identifier}")
                 ],
             )
         )

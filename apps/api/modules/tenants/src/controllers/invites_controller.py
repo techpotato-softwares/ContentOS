@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from database import get_session
 from database.models import Tenant, TenantInvite, User
@@ -129,8 +129,8 @@ class InvitesController:
             rows = list(
                 session.exec(select(TenantInvite).where(TenantInvite.tenant_id == tid)).all()
             )
-            rows.sort(key=lambda r: r.created_at or datetime.utcnow(), reverse=True)
-            now = datetime.utcnow()
+            rows.sort(key=lambda r: r.created_at or datetime.now(timezone.utc).replace(tzinfo=None), reverse=True)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             out = []
             dirty = False
             for inv in rows:
@@ -159,7 +159,7 @@ class InvitesController:
             if invite.status == "accepted":
                 raise ConflictError("Accepted invites cannot be revoked")
             invite.status = "revoked"
-            invite.updated_at = datetime.utcnow()
+            invite.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(invite)
             write_audit(
                 session,
@@ -262,7 +262,7 @@ class InvitesController:
                 )
 
                 _ensure_platform_rbac(session)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
             role = get_role_by_name(session, invite.role)

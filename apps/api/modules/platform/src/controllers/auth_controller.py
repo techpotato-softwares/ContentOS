@@ -72,30 +72,6 @@ _ROLES = {
     "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
 }
 
-# Platform RBAC catalog — ensured idempotently on register so production signup
-# does not depend on scripts/seed.py (seed is local/dev only).
-_PERMS = [
-    ("admin:tenants", "Manage all tenants"),
-    ("training:manage", "Edit training schema"),
-    ("tenant:admin", "Tenant administration"),
-    ("agent:chat", "Agent chat & generate"),
-    ("posts:review", "Review posts"),
-    ("posts:publish", "Publish to LinkedIn"),
-    ("admin", "Legacy admin"),
-]
-
-_ROLES = {
-    "super_admin": [p[0] for p in _PERMS],
-    "tenant_admin": [
-        "training:manage",
-        "tenant:admin",
-        "agent:chat",
-        "posts:review",
-        "posts:publish",
-    ],
-    "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
-}
-
 # Generic copy for request endpoints — prevents email/account enumeration
 _VERIFY_REQUEST_MSG = (
     "If an account exists for that email, we sent a verification link."
@@ -104,29 +80,7 @@ _RESET_REQUEST_MSG = (
     "If an account exists for that email, we sent a password reset link."
 )
 
-# Platform RBAC catalog — ensured idempotently on register so production signup
-# does not depend on scripts/seed.py (seed is local/dev only).
-_PERMS = [
-    ("admin:tenants", "Manage all tenants"),
-    ("training:manage", "Edit training schema"),
-    ("tenant:admin", "Tenant administration"),
-    ("agent:chat", "Agent chat & generate"),
-    ("posts:review", "Review posts"),
-    ("posts:publish", "Publish to LinkedIn"),
-    ("admin", "Legacy admin"),
-]
 
-_ROLES = {
-    "super_admin": [p[0] for p in _PERMS],
-    "tenant_admin": [
-        "training:manage",
-        "tenant:admin",
-        "agent:chat",
-        "posts:review",
-        "posts:publish",
-    ],
-    "tenant_member": ["agent:chat", "posts:review", "posts:publish"],
-}
 
 
 def _user_permissions(session, role_id: int | None) -> tuple[Role | None, list[str]]:
@@ -366,7 +320,6 @@ def _issue_auth_tokens(session, user: User) -> dict:
 
 def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
     """Purge OTP rows that are past the rate-limit retention window (or 7 days)."""
-    # pyrefly: ignore [deprecated]
     now = _utc_now()
     window = max(
         otp_util.otp_email_rate_limit()[1],
@@ -390,7 +343,6 @@ def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
 def _count_recent_otp_requests(
     session, *, email: str | None = None, ip: str | None = None, window_seconds: int
 ) -> int:
-    # pyrefly: ignore [deprecated]
     since = _utc_now() - timedelta(seconds=window_seconds)
     q = select(EmailOtpChallenge).where(EmailOtpChallenge.created_at >= since)
     if email:
@@ -495,11 +447,10 @@ class AuthController:
                 select(EmailOtpChallenge).where(
                     (EmailOtpChallenge.email == email)
                     & (EmailOtpChallenge.consumed_at == None)
-                    & (EmailOtpChallenge.expires_at > datetime.utcnow())
+                    & (EmailOtpChallenge.expires_at > _utc_now())
                 )
             ).all()
             for row in active:
-                # pyrefly: ignore [deprecated]
                 row.consumed_at = _utc_now()
                 session.add(row)
 
@@ -525,11 +476,6 @@ class AuthController:
             del code
 
             if not (isinstance(send_result, dict) and send_result.get("sent")):
-                (
-                    (send_result or {}).get("reason")
-                    if isinstance(send_result, dict)
-                    else "unknown"
-                )
                 err = (
                     (send_result or {}).get("error")
                     if isinstance(send_result, dict)
@@ -606,9 +552,6 @@ class AuthController:
                 )
 
             if challenge.expires_at < _utc_now():
-            # pyrefly: ignore [deprecated]
-            if challenge.expires_at < _utc_now():
-                # pyrefly: ignore [deprecated]
                 challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
@@ -619,7 +562,6 @@ class AuthController:
                 )
 
             if challenge.attempts >= challenge.max_attempts:
-                # pyrefly: ignore [deprecated]
                 challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
@@ -634,7 +576,6 @@ class AuthController:
             ):
                 challenge.attempts += 1
                 if challenge.attempts >= challenge.max_attempts:
-                    # pyrefly: ignore [deprecated]
                     challenge.consumed_at = _utc_now()
                 session.add(challenge)
                 session.commit()
@@ -652,7 +593,6 @@ class AuthController:
                 )
 
             # Success: consume so the code cannot be reused
-            # pyrefly: ignore [deprecated]
             challenge.consumed_at = _utc_now()
             session.add(challenge)
             session.commit()
@@ -898,7 +838,6 @@ class AuthController:
                 except AppError as e:
                     if e.code == "RATE_LIMITED":
                         raise
-                    session.rollback()
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
             # Always same message (enumeration-safe)
@@ -957,7 +896,6 @@ class AuthController:
                 except AppError as e:
                     if e.code == "RATE_LIMITED":
                         raise
-                    session.rollback()
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
         return create_success_response(out)

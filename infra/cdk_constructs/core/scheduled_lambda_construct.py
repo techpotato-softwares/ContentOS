@@ -172,6 +172,6 @@ class ScheduledLambdaConstruct(Construct):
 
     @staticmethod
     def _parse_schedule(expression: str) -> events.Schedule:
-        if expression.startswith("rate(") or expression.startswith("cron("):
+        if expression.startswith(("rate(", "cron(")):
             return events.Schedule.expression(expression)
         return events.Schedule.rate(Duration.hours(6))

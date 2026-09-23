@@ -9,7 +9,7 @@
     "dev:api": "cd apps/api && uv run uvicorn src.dev_server:app --reload --port 4001",
     "dev:web": "cd apps/web && npm run dev",
     "dev:marketing": "cd apps/marketing && npm run dev",
-    "install:api": "cd apps/api && uv sync --all-extras",
+    "install:api": "cd apps/api && uv venv && uv pip install -e \".[dev]\"",
     "install:web": "cd apps/web && npm install",
     "install:marketing": "cd apps/marketing && npm install",
     "install:infra": "cd infra && uv sync",

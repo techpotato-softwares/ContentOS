@@ -359,7 +359,7 @@ class TenantsController:
         ext = ext_map.get(content_type)
         if not ext:
             filename = (data.get("filename") or "logo.png").lower()
-            if filename.endswith(".jpg") or filename.endswith(".jpeg"):
+            if filename.endswith((".jpg", ".jpeg")):
                 ext = "jpg"
             elif filename.endswith(".webp"):
                 ext = "webp"

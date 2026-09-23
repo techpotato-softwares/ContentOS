@@ -8,7 +8,6 @@ from __future__ import annotations
 import io
 import os
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from PIL import Image, ImageColor, ImageDraw, ImageEnhance, ImageFont
@@ -65,7 +64,7 @@ def _hex(color: str, fallback: str) -> tuple[int, int, int]:
         return ImageColor.getrgb(fallback)[:3]
 
 
-def _resolve_logo_bytes(logo_url: Optional[str], tenant_id: int) -> Optional[bytes]:
+def _resolve_logo_bytes(logo_url: str | None, tenant_id: int) -> bytes | None:
     if not logo_url:
         for ext in ("png", "jpg", "jpeg", "webp"):
             p = MEDIA_ROOT / f"tenants/{tenant_id}/brand/logo.{ext}"
@@ -76,7 +75,7 @@ def _resolve_logo_bytes(logo_url: Optional[str], tenant_id: int) -> Optional[byt
         local = MEDIA_ROOT / logo_url[len("/media/") :]
         if local.exists():
             return local.read_bytes()
-    if logo_url.startswith("http://") or logo_url.startswith("https://"):
+    if logo_url.startswith(("http://", "https://")):
         try:
             with httpx.Client(timeout=15.0) as client:
                 r = client.get(logo_url)
@@ -151,9 +150,7 @@ def background_looks_empty(background_bytes: bytes, *, right_ratio: float = 0.45
         # Very dark void OR almost no detail
         if mean < 18 and std < 12:
             return True
-        if std < 8:
-            return True
-        return False
+        return std < 8
     except Exception:
         return False
 

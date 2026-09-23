@@ -917,9 +917,7 @@ def bedrock_configured() -> bool:
         os.environ.get("AWS_SECRET_ACCESS_KEY") or ""
     ).strip():
         return True
-    if (os.environ.get("AWS_PROFILE") or "").strip():
-        return True
-    return False
+    return bool((os.environ.get("AWS_PROFILE") or "").strip())
 
 
 def _bedrock_runtime_client():
@@ -1037,7 +1035,7 @@ def datetime_utcnow_iso() -> str:
 
 def _clamp_score(v, default: int = 70) -> int:
     try:
-        n = int(round(float(v)))
+        n = round(float(v))
     except Exception:
         n = default
     return max(0, min(100, n))

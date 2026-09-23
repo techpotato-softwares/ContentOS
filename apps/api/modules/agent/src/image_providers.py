@@ -5,7 +5,6 @@ import base64
 import json
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 import httpx
 from middleware.error_handler import AppError
@@ -67,9 +66,7 @@ def bedrock_image_configured() -> bool:
         os.environ.get("AWS_SECRET_ACCESS_KEY") or ""
     ).strip():
         return True
-    if (os.environ.get("AWS_PROFILE") or "").strip():
-        return True
-    return False
+    return bool((os.environ.get("AWS_PROFILE") or "").strip())
 
 
 def _bedrock_runtime_client():
@@ -504,7 +501,7 @@ def list_image_models() -> list[dict]:
     return out
 
 
-def get_image_provider(model_id: Optional[str] = None) -> ImageBackgroundProvider:
+def get_image_provider(model_id: str | None = None) -> ImageBackgroundProvider:
     mid = (model_id or os.environ.get("OPENAI_IMAGE_MODEL") or "gpt-image-1").strip()
     if mid == "stub" or (os.environ.get("AI_PROVIDER") or "").lower() == "stub":
         return StubImageProvider()

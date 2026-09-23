@@ -102,7 +102,7 @@ def _body(resp: dict) -> dict:
 
 def test_admin_creates_lists_and_token_not_exposed(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        _tenant, _admin, jwt_user = _seed_tenant_admin(session)
 
     ctrl = InvitesController()
     with patch("utils.tenant_invites.send_email") as send_mock:
@@ -151,7 +151,7 @@ def test_non_admin_forbidden_via_permission_check():
 
 def test_accept_register_then_single_use(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        tenant, _admin, jwt_user = _seed_tenant_admin(session)
         tid = tenant.tenant_id
 
     ctrl = InvitesController()
@@ -195,7 +195,7 @@ def test_accept_register_then_single_use(db_session):
 
 def test_revoke_and_expired(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        _tenant, _admin, jwt_user = _seed_tenant_admin(session)
 
     ctrl = InvitesController()
     created = ctrl.create_invite(
@@ -248,8 +248,8 @@ def test_revoke_and_expired(db_session):
 
 def test_cross_tenant_membership_blocked(db_session):
     with db_session() as session:
-        tenant_a, admin_a, jwt_a = _seed_tenant_admin(session)
-        tenant_b, admin_b, jwt_b = _seed_tenant_admin(session)
+        _tenant_a, _admin_a, jwt_a = _seed_tenant_admin(session)
+        tenant_b, _admin_b, _jwt_b = _seed_tenant_admin(session)
         tid_b = int(tenant_b.tenant_id)
         # User already on tenant B with invite email
         member_role = session.exec(select(Role).where(Role.role_name == "tenant_member")).first()
@@ -292,7 +292,7 @@ def test_cross_tenant_membership_blocked(db_session):
 
 def test_preview_has_no_token(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        _tenant, _admin, jwt_user = _seed_tenant_admin(session)
 
     ctrl = InvitesController()
     ctrl.create_invite({"email": "p@ex.com", "role": "tenant_admin"}, user=jwt_user)

@@ -79,7 +79,7 @@ def pick_handler(path: str):
     best = None
     best_len = -1
     for prefix, name in ROUTE_MAP:
-        if path == prefix or path.startswith(prefix + "/") or path.startswith(prefix):
+        if path == prefix or path.startswith((prefix + "/", prefix)):
             if len(prefix) > best_len:
                 best = name
                 best_len = len(prefix)
