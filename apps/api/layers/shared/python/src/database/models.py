@@ -10,8 +10,8 @@ from sqlmodel import Column, Field, SQLModel
 
 
 def _utcnow() -> datetime:
-    """Naive UTC now (same semantics as deprecated datetime.utcnow)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    """Timezone-aware UTC now (required for PostgreSQL timezone compatibility)."""
+    return datetime.now(timezone.utc)
 
 
 class Tenant(SQLModel, table=True):
@@ -249,7 +249,7 @@ class EmailOtpChallenge(SQLModel, table=True):
     max_attempts: int = 5
     consumed_at: datetime | None = None
     request_ip: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 # Keep demo table for kit compatibility (disabled in ContentOS modules by default)

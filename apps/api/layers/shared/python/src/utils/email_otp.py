@@ -10,7 +10,7 @@ import hmac
 import os
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # pyrefly: ignore [missing-import]
 from utils.logger import logger
@@ -83,7 +83,7 @@ def verify_otp_hash(code: str, *, email: str, code_hash: str) -> bool:
 
 def otp_expires_at(now: datetime | None = None) -> datetime:
     # pyrefly: ignore [deprecated]
-    base = now or datetime.utcnow()
+    base = now or datetime.now(timezone.utc)
     return base + timedelta(seconds=otp_ttl_seconds())
 
 

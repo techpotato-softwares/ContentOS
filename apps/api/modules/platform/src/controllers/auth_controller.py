@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 # passlib exposes bcrypt dynamically; getattr keeps runtime + type-checkers happy
+# pyrefly: ignore [missing-attribute]
 bcrypt = cast(Any, _passlib_hash.bcrypt)
 
 from database import get_session
@@ -136,7 +137,7 @@ def _token_payload(
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _unique_index_names_for_columns(table: Any, column_names: set[str]) -> frozenset[str]:
@@ -320,7 +321,7 @@ def _issue_auth_tokens(session, user: User) -> dict:
 
 def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
     """Purge OTP rows that are past the rate-limit retention window (or 7 days)."""
-    now = _utc_now()
+    now = datetime.now(timezone.utc)
     window = max(
         otp_util.otp_email_rate_limit()[1],
         otp_util.otp_ip_rate_limit()[1],
@@ -343,7 +344,7 @@ def _cleanup_otp_rows(session, *, email: str | None = None) -> None:
 def _count_recent_otp_requests(
     session, *, email: str | None = None, ip: str | None = None, window_seconds: int
 ) -> int:
-    since = _utc_now() - timedelta(seconds=window_seconds)
+    since = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
     q = select(EmailOtpChallenge).where(EmailOtpChallenge.created_at >= since)
     if email:
         q = q.where(EmailOtpChallenge.email == email)
@@ -447,11 +448,11 @@ class AuthController:
                 select(EmailOtpChallenge).where(
                     (EmailOtpChallenge.email == email)
                     & (EmailOtpChallenge.consumed_at == None)
-                    & (EmailOtpChallenge.expires_at > _utc_now())
+                    & (EmailOtpChallenge.expires_at > datetime.now(timezone.utc))
                 )
             ).all()
             for row in active:
-                row.consumed_at = _utc_now()
+                row.consumed_at = datetime.now(timezone.utc)
                 session.add(row)
 
             code = otp_util.generate_otp_code()
@@ -551,8 +552,8 @@ class AuthController:
                     "OTP_NOT_FOUND",
                 )
 
-            if challenge.expires_at < _utc_now():
-                challenge.consumed_at = _utc_now()
+            if challenge.expires_at < datetime.now(timezone.utc):
+                challenge.consumed_at = datetime.now(timezone.utc)
                 session.add(challenge)
                 session.commit()
                 raise AppError(
@@ -562,7 +563,7 @@ class AuthController:
                 )
 
             if challenge.attempts >= challenge.max_attempts:
-                challenge.consumed_at = _utc_now()
+                challenge.consumed_at = datetime.now(timezone.utc)
                 session.add(challenge)
                 session.commit()
                 raise AppError(
@@ -576,7 +577,7 @@ class AuthController:
             ):
                 challenge.attempts += 1
                 if challenge.attempts >= challenge.max_attempts:
-                    challenge.consumed_at = _utc_now()
+                    challenge.consumed_at = datetime.now(timezone.utc)
                 session.add(challenge)
                 session.commit()
                 remaining = max(0, challenge.max_attempts - challenge.attempts)
@@ -593,7 +594,7 @@ class AuthController:
                 )
 
             # Success: consume so the code cannot be reused
-            challenge.consumed_at = _utc_now()
+            challenge.consumed_at = datetime.now(timezone.utc)
             session.add(challenge)
             session.commit()
 
@@ -838,6 +839,7 @@ class AuthController:
                 except AppError as e:
                     if e.code == "RATE_LIMITED":
                         raise
+                    session.rollback()
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
             # Always same message (enumeration-safe)
@@ -896,6 +898,7 @@ class AuthController:
                 except AppError as e:
                     if e.code == "RATE_LIMITED":
                         raise
+                    session.rollback()
                 except Exception:  # noqa: BLE001 — enumeration-safe; never leak mail failures
                     session.rollback()
         return create_success_response(out)
