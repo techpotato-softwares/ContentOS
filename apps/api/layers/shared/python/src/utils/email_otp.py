@@ -10,10 +10,11 @@ import hmac
 import os
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # pyrefly: ignore [missing-import]
 from utils.logger import logger
+
 # pyrefly: ignore [missing-import]
 from utils.ses_mail import send_email
 
@@ -71,7 +72,7 @@ def generate_otp_code(length: int | None = None) -> str:
 
 def hash_otp(code: str, *, email: str) -> str:
     """HMAC-SHA256 of code bound to normalized email (prevents cross-email reuse)."""
-    msg = f"{normalize_email(email)}:{code.strip()}".encode("utf-8")
+    msg = f"{normalize_email(email)}:{code.strip()}".encode()
     return hmac.new(_pepper(), msg, hashlib.sha256).hexdigest()
 
 
@@ -82,7 +83,7 @@ def verify_otp_hash(code: str, *, email: str, code_hash: str) -> bool:
 
 def otp_expires_at(now: datetime | None = None) -> datetime:
     # pyrefly: ignore [deprecated]
-    base = now or datetime.utcnow()
+    base = now or datetime.now(timezone.utc)
     return base + timedelta(seconds=otp_ttl_seconds())
 
 

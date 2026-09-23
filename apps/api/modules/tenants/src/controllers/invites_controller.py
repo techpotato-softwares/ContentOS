@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any, cast
 
-from passlib.hash import bcrypt
-from sqlmodel import select
+import passlib.hash as _passlib_hash
 
+# pyrefly: ignore [missing-attribute]
+bcrypt = cast(Any, _passlib_hash.bcrypt)
 from database import get_session
 from database.models import Tenant, TenantInvite, User
 from decorators import Controller, Delete, Get, Post
@@ -19,6 +21,7 @@ from middleware.error_handler import (
     ValidationError,
     create_success_response,
 )
+from sqlmodel import select
 from utils.tenant import require_user, resolve_tenant_id, write_audit
 from utils.tenant_invites import (
     accept_invite_for_user,
@@ -70,6 +73,7 @@ class InvitesController:
     @RequirePermission("tenant:admin")
     def create_invite(self, data: dict, user=None):
         require_user(user)
+        assert isinstance(user, dict)
         data = data or {}
         email = (data.get("email") or "").strip()
         role = data.get("role") or "tenant_member"
@@ -130,8 +134,8 @@ class InvitesController:
             rows = list(
                 session.exec(select(TenantInvite).where(TenantInvite.tenant_id == tid)).all()
             )
-            rows.sort(key=lambda r: r.created_at or datetime.utcnow(), reverse=True)
-            now = datetime.utcnow()
+            rows.sort(key=lambda r: r.created_at or datetime.now(timezone.utc), reverse=True)
+            now = datetime.now(timezone.utc)
             out = []
             dirty = False
             for inv in rows:
@@ -152,15 +156,16 @@ class InvitesController:
     @RequirePermission("tenant:admin")
     def revoke_invite(self, inviteId: str, user=None):
         require_user(user)
+        assert isinstance(user, dict)
         tid = resolve_tenant_id(user)
         with get_session() as session:
             invite = session.get(TenantInvite, int(inviteId))
-            if not invite or int(invite.tenant_id) != int(tid):
+            if not invite or invite.tenant_id != tid:
                 raise NotFoundError("Invite not found")
             if invite.status == "accepted":
                 raise ConflictError("Accepted invites cannot be revoked")
             invite.status = "revoked"
-            invite.updated_at = datetime.utcnow()
+            invite.updated_at = datetime.now(timezone.utc)
             session.add(invite)
             write_audit(
                 session,
@@ -263,7 +268,7 @@ class InvitesController:
                 )
 
                 _ensure_platform_rbac(session)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
             role = get_role_by_name(session, invite.role)
