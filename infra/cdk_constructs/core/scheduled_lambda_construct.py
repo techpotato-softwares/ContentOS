@@ -9,9 +9,8 @@ from aws_cdk import aws_events_targets as targets
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
+from constructs import Construct
 from paths import API_ASSET_EXCLUDES, API_ROOT
 
 _RETENTION: dict[int, logs.RetentionDays] = {
@@ -173,6 +172,6 @@ class ScheduledLambdaConstruct(Construct):
 
     @staticmethod
     def _parse_schedule(expression: str) -> events.Schedule:
-        if expression.startswith("rate(") or expression.startswith("cron("):
+        if expression.startswith(("rate(", "cron(")):
             return events.Schedule.expression(expression)
         return events.Schedule.rate(Duration.hours(6))

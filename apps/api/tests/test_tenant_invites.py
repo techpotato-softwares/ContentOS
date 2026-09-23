@@ -24,17 +24,16 @@ os.environ["SES_FROM_EMAIL"] = "noreply@test.local"
 os.environ["INVITE_FRONTEND_URL"] = "http://localhost:5173"
 os.environ.pop("DATABASE_URL", None)
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session, SQLModel, select
-
 import database as db_mod
-from database.models import Role, RolePermission, Permission, Tenant, TenantInvite, User
-from middleware.error_handler import AppError, ConflictError, ForbiddenError
+from database.models import Role, Tenant, TenantInvite, User
+from middleware.error_handler import AppError, ConflictError
 from modules.platform.src.controllers.auth_controller import _ensure_platform_rbac
 from modules.tenants.src.controllers.invites_controller import InvitesController
 from passlib.hash import bcrypt
-from utils.tenant_invites import hash_invite_token, generate_invite_token
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session, SQLModel, select
+from utils.tenant_invites import generate_invite_token, hash_invite_token
 
 
 @pytest.fixture()
@@ -103,7 +102,7 @@ def _body(resp: dict) -> dict:
 
 def test_admin_creates_lists_and_token_not_exposed(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        _tenant, _admin, jwt_user = _seed_tenant_admin(session)
 
     ctrl = InvitesController()
     with patch("utils.tenant_invites.send_email") as send_mock:
@@ -152,7 +151,7 @@ def test_non_admin_forbidden_via_permission_check():
 
 def test_accept_register_then_single_use(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        tenant, _admin, jwt_user = _seed_tenant_admin(session)
         tid = tenant.tenant_id
 
     ctrl = InvitesController()
@@ -196,7 +195,7 @@ def test_accept_register_then_single_use(db_session):
 
 def test_revoke_and_expired(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        _tenant, _admin, jwt_user = _seed_tenant_admin(session)
 
     ctrl = InvitesController()
     created = ctrl.create_invite(
@@ -249,8 +248,8 @@ def test_revoke_and_expired(db_session):
 
 def test_cross_tenant_membership_blocked(db_session):
     with db_session() as session:
-        tenant_a, admin_a, jwt_a = _seed_tenant_admin(session)
-        tenant_b, admin_b, jwt_b = _seed_tenant_admin(session)
+        _tenant_a, _admin_a, jwt_a = _seed_tenant_admin(session)
+        tenant_b, _admin_b, _jwt_b = _seed_tenant_admin(session)
         tid_b = int(tenant_b.tenant_id)
         # User already on tenant B with invite email
         member_role = session.exec(select(Role).where(Role.role_name == "tenant_member")).first()
@@ -287,14 +286,13 @@ def test_cross_tenant_membership_blocked(db_session):
     with patch(
         "modules.tenants.src.controllers.invites_controller._optional_user",
         return_value=event["user"],
-    ):
-        with pytest.raises(ConflictError):
-            ctrl.accept_invite({"token": raw}, event=event)
+    ), pytest.raises(ConflictError):
+        ctrl.accept_invite({"token": raw}, event=event)
 
 
 def test_preview_has_no_token(db_session):
     with db_session() as session:
-        tenant, admin, jwt_user = _seed_tenant_admin(session)
+        _tenant, _admin, jwt_user = _seed_tenant_admin(session)
 
     ctrl = InvitesController()
     ctrl.create_invite({"email": "p@ex.com", "role": "tenant_admin"}, user=jwt_user)

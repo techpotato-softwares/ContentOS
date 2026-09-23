@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import os
 import sys
 from logging.config import fileConfig
+
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
@@ -19,7 +21,7 @@ if os.path.exists(_env_path):
         k, v = k.strip(), v.strip().strip('"').strip("'")
         os.environ.setdefault(k, v)
 
-from database.models import SQLModel  # noqa: E402
+from database.models import SQLModel
 from sqlmodel import SQLModel as _SM  # noqa: F401
 
 config = context.config

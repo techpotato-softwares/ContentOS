@@ -1,18 +1,19 @@
 """Publish approved posts whose scheduled_at is due."""
 from __future__ import annotations
+
 import json
 import os
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "layers" / "shared" / "python" / "src"))
 sys.path.insert(0, str(ROOT))
 
-from sqlmodel import select
 from database import get_session
-from database.models import ContentPost, SocialAccount
+from database.models import ContentPost
+from sqlmodel import select
 from utils.logger import logger
 from utils.tenant import write_audit
 
@@ -26,18 +27,18 @@ def handler(event, context):
         due = session.exec(
             select(ContentPost).where(
                 ContentPost.status == "approved",
-                ContentPost.scheduled_at != None,  # noqa: E711
+                ContentPost.scheduled_at != None,
                 ContentPost.scheduled_at <= now,
             )
         ).all()
         for post in due:
             try:
                 from modules.publishing.src.controllers.publishing_controller import (
-                    _load_tokens,
-                    _linkedin_ugc_publish,
-                    _linkedin_document_publish,
-                    _pick_publish_account,
                     _ensure_social_account_columns,
+                    _linkedin_document_publish,
+                    _linkedin_ugc_publish,
+                    _load_tokens,
+                    _pick_publish_account,
                 )
 
                 _ensure_social_account_columns()
@@ -69,9 +70,7 @@ def handler(event, context):
                             )
                     elif cfg_ok:
                         image_for_share = None
-                        if fmt == "text" and post.image_url:
-                            image_for_share = post.image_url
-                        elif fmt == "image" and post.image_url and not str(
+                        if fmt == "text" and post.image_url or fmt == "image" and post.image_url and not str(
                             post.image_url
                         ).startswith("data:"):
                             image_for_share = post.image_url

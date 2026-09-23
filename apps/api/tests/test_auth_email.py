@@ -28,10 +28,6 @@ os.environ["AUTH_TOKEN_RATE_LIMIT"] = "3"
 os.environ["AUTH_TOKEN_RATE_WINDOW_MINUTES"] = "60"
 os.environ.pop("DATABASE_URL", None)
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session, SQLModel, select
-
 import database as db_mod
 from database.models import (
     AuthToken,
@@ -43,14 +39,16 @@ from database.models import (
 )
 from middleware.auth import auth_middleware
 from middleware.error_handler import AppError
+from modules.platform.src.controllers.auth_controller import AuthController
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session, SQLModel, select
 from utils.auth_tokens import (
     PURPOSE_EMAIL_VERIFY,
-    PURPOSE_PASSWORD_RESET,
     hash_token,
     require_email_verified,
 )
 from utils.webtoken import verify_access_token
-from modules.platform.src.controllers.auth_controller import AuthController
 
 
 def _seed_rbac(session: Session) -> Role:

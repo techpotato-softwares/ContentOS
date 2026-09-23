@@ -18,7 +18,7 @@ if env_path.exists():
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-from utils.ses_mail import send_email  # noqa: E402
+from utils.ses_mail import send_email
 
 result = send_email(
     to_addresses=["otp.demo@contentos.local"],

@@ -1,13 +1,14 @@
 """Extract text from URLs and PDFs for repurposing into LinkedIn briefs."""
 from __future__ import annotations
+
 import base64
 import io
 import re
 from html import unescape
 from urllib.parse import urlparse
-import httpx
-from middleware.error_handler import ValidationError, AppError
 
+import httpx
+from middleware.error_handler import AppError, ValidationError
 
 MAX_CHARS = 12000
 USER_AGENT = (
@@ -48,7 +49,7 @@ def extract_from_url(url: str) -> dict:
         raise AppError(f"URL fetch error: {e}", 502, "URL_FETCH_ERROR")
 
     title = ""
-    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
     if m:
         title = _clean_text(re.sub(r"<[^>]+>", "", m.group(1)))[:200]
 

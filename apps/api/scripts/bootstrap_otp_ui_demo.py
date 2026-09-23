@@ -23,8 +23,8 @@ os.environ["SES_ENABLED"] = "false"
 os.environ["SES_FROM_EMAIL"] = "noreply@contentos.local"
 os.environ["OTP_RATE_LIMIT_PER_EMAIL"] = "20"
 
-from database import init_db, get_session  # noqa: E402
-from modules.platform.src.controllers.auth_controller import AuthController  # noqa: E402
+from database import init_db
+from modules.platform.src.controllers.auth_controller import AuthController
 
 init_db()
 ctrl = AuthController()

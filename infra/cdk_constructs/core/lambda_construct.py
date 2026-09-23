@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import json
 import os
+
 from aws_cdk import CfnOutput, Duration
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
+from constructs import Construct
 from paths import API_ASSET_EXCLUDES, API_ROOT, ENV_LOCAL_JSON
 from utils.manifest_reader import AppManifest
 

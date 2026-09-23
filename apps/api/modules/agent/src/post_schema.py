@@ -1,10 +1,11 @@
 """Structured LinkedIn post variant plans + deterministic validation."""
 from __future__ import annotations
+
 import json
 import re
-from typing import Any, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Any
 
+from pydantic import BaseModel, Field, field_validator
 
 ANGLES = ("educational", "thought_leadership", "product_value")
 
@@ -32,21 +33,21 @@ class SlidePlan(BaseModel):
     headline: str = ""
     body: str = ""
     visual_prompt: str = ""
-    image_url: Optional[str] = None
+    image_url: str | None = None
 
 
 class PostVariantPlan(BaseModel):
     angle: str
     headline: str = Field(min_length=1, max_length=160)
     subhead: str = ""
-    bullets: List[str] = Field(default_factory=list)
+    bullets: list[str] = Field(default_factory=list)
     caption: str = ""
     background_prompt: str = ""
     # Compat alias filled from background_prompt
     image_prompt: str = ""
     format: str = "image"  # text | image | carousel
-    slides: List[SlidePlan] = Field(default_factory=list)
-    hashtags: List[str] = Field(default_factory=list)
+    slides: list[SlidePlan] = Field(default_factory=list)
+    hashtags: list[str] = Field(default_factory=list)
 
     @field_validator("angle")
     @classmethod
@@ -160,7 +161,7 @@ def apply_banned_claims(plan: PostVariantPlan, banned: list[str]) -> PostVariant
         c = (claim or "").strip().lower()
         if c and c in blob:
             # Strip banned phrase from caption; keep structure
-            plan.caption = re.sub(re.escape(claim), "", plan.caption, flags=re.I).strip()
+            plan.caption = re.sub(re.escape(claim), "", plan.caption, flags=re.IGNORECASE).strip()
     return plan
 
 

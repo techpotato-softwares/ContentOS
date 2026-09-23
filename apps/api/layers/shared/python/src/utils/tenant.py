@@ -1,8 +1,9 @@
 """Tenant isolation helpers — always scope by tenant_id from JWT (or explicit admin target)."""
 from __future__ import annotations
-from typing import Any
-from middleware.error_handler import AppError, ForbiddenError
 
+from typing import Any
+
+from middleware.error_handler import AppError, ForbiddenError
 
 SUPER_ADMIN_ROLE = "super_admin"
 
