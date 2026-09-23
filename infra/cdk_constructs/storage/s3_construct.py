@@ -4,10 +4,9 @@ from __future__ import annotations
 from aws_cdk import CfnOutput, Duration
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
-from constructs import Construct
-
 from config.environment import EnvironmentConfig
 from config.s3_config import S3BucketConfig, get_s3_config
+from constructs import Construct
 
 
 class S3Construct(Construct):

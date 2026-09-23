@@ -38,6 +38,24 @@ class JwtConfig:
 
 
 @dataclass
+class EmailConfig:
+    transport: str
+    ses_enabled: str
+    ses_from_email: str
+
+
+@dataclass
+class OtpConfig:
+    ttl_seconds: str
+    max_attempts: str
+    code_length: str
+    rate_limit_per_email: str
+    rate_limit_per_ip: str
+    rate_window_seconds: str
+    pepper: str | None
+
+
+@dataclass
 class EnvironmentConfig:
     environment: Environment
     stack_name: str
@@ -52,6 +70,8 @@ class EnvironmentConfig:
     features: FeatureFlags
     database: DatabaseConfig
     jwt: JwtConfig
+    email: EmailConfig
+    otp: OtpConfig
     custom_domain: str | None = None
     cloudfront_certificate_arn: str | None = None
 
@@ -80,6 +100,22 @@ _SUPABASE_USER = (
     os.environ.get("DB_USERNAME") or f"postgres.{_SUPABASE_PROJECT_REF}"
 )
 
+_EMAIL_CONFIG = EmailConfig(
+    transport=os.environ.get("EMAIL_TRANSPORT", "ses"),
+    ses_enabled=os.environ.get("SES_ENABLED", "true"),
+    ses_from_email=os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app"),
+)
+
+_OTP_CONFIG = OtpConfig(
+    ttl_seconds=os.environ.get("OTP_TTL_SECONDS", "600"),
+    max_attempts=os.environ.get("OTP_MAX_ATTEMPTS", "5"),
+    code_length=os.environ.get("OTP_CODE_LENGTH", "6"),
+    rate_limit_per_email=os.environ.get("OTP_RATE_LIMIT_PER_EMAIL", "5"),
+    rate_limit_per_ip=os.environ.get("OTP_RATE_LIMIT_PER_IP", "20"),
+    rate_window_seconds=os.environ.get("OTP_RATE_WINDOW_SECONDS", "900"),
+    pepper=os.environ.get("OTP_PEPPER"),
+)
+
 ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
     "dev": EnvironmentConfig(
         environment="dev",
@@ -105,6 +141,8 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             expires_in="15m",
             refresh_expires_in="1d",
         ),
+        email=_EMAIL_CONFIG,
+        otp=_OTP_CONFIG,
     ),
     "qa": EnvironmentConfig(
         environment="qa",
@@ -130,6 +168,8 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             expires_in="15m",
             refresh_expires_in="7d",
         ),
+        email=_EMAIL_CONFIG,
+        otp=_OTP_CONFIG,
     ),
     "prod": EnvironmentConfig(
         environment="prod",
@@ -154,6 +194,8 @@ ENVIRONMENT_CONFIGS: dict[Environment, EnvironmentConfig] = {
             expires_in="2h",
             refresh_expires_in="30d",
         ),
+        email=_EMAIL_CONFIG,
+        otp=_OTP_CONFIG,
         custom_domain=os.environ.get("CUSTOM_DOMAIN") or None,
         cloudfront_certificate_arn=os.environ.get("CLOUDFRONT_CERTIFICATE_ARN")
         or None,

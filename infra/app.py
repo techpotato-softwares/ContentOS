@@ -14,10 +14,8 @@ import os
 import sys
 
 from aws_cdk import App, Environment
-
-from config.environment import ENVIRONMENT_CONFIGS
+from config.environment import ENVIRONMENT_CONFIGS, get_environment_config
 from config.environment import Environment as EnvName
-from config.environment import get_environment_config
 from stacks.api_stack import ApiStack
 
 app = App()

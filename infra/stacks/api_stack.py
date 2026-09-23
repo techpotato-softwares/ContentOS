@@ -5,10 +5,6 @@ import os
 
 from aws_cdk import RemovalPolicy, Stack, Tags
 from aws_cdk import aws_lambda as lambda_
-from constructs import Construct
-
-from config.environment import EnvironmentConfig
-from config.rds_config import get_rds_config
 from cdk_constructs.core.api_gateway_construct import ApiGatewayConstruct
 from cdk_constructs.core.lambda_construct import LambdaConstruct
 from cdk_constructs.core.scheduled_lambda_construct import (
@@ -25,6 +21,9 @@ from cdk_constructs.permissions.lambda_permissions import (
 from cdk_constructs.security.db_secrets_construct import DbSecretsConstruct
 from cdk_constructs.security.jwt_secrets_construct import JwtSecretsConstruct
 from cdk_constructs.storage.s3_construct import S3Construct
+from config.environment import EnvironmentConfig
+from config.rds_config import get_rds_config
+from constructs import Construct
 from paths import LAYER_BUNDLED, MARKETING_PATH, UI_BUILD_PATH
 from utils.manifest_reader import read_manifest
 
@@ -118,14 +117,17 @@ class ApiStack(Stack):
         if auth_fn:
             from aws_cdk import aws_iam as iam
 
-            auth_fn.add_environment(
-                "SES_ENABLED",
-                os.environ.get("SES_ENABLED", "true"),
-            )
-            auth_fn.add_environment(
-                "SES_FROM_EMAIL",
-                os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app"),
-            )
+            auth_fn.add_environment("SES_ENABLED", config.email.ses_enabled)
+            auth_fn.add_environment("SES_FROM_EMAIL", config.email.ses_from_email)
+            auth_fn.add_environment("EMAIL_TRANSPORT", config.email.transport)
+            auth_fn.add_environment("OTP_TTL_SECONDS", config.otp.ttl_seconds)
+            auth_fn.add_environment("OTP_MAX_ATTEMPTS", config.otp.max_attempts)
+            auth_fn.add_environment("OTP_CODE_LENGTH", config.otp.code_length)
+            auth_fn.add_environment("OTP_RATE_LIMIT_PER_EMAIL", config.otp.rate_limit_per_email)
+            auth_fn.add_environment("OTP_RATE_LIMIT_PER_IP", config.otp.rate_limit_per_ip)
+            auth_fn.add_environment("OTP_RATE_WINDOW_SECONDS", config.otp.rate_window_seconds)
+            if config.otp.pepper:
+                auth_fn.add_environment("OTP_PEPPER", config.otp.pepper)
             auth_fn.add_to_role_policy(
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
@@ -178,10 +180,8 @@ class ApiStack(Stack):
                 schedule_expression="cron(0 9 ? * MON *)",
                 timeout=120,
                 environment={
-                    "SES_ENABLED": "true",
-                    "SES_FROM_EMAIL": os.environ.get(
-                        "SES_FROM_EMAIL", "noreply@contentos.app"
-                    ),
+                    "SES_ENABLED": config.email.ses_enabled,
+                    "SES_FROM_EMAIL": config.email.ses_from_email,
                 },
                 enabled=True,
             ),
@@ -223,15 +223,13 @@ class ApiStack(Stack):
             from aws_cdk import aws_iam as iam
 
             auth_fn.add_environment(
-                "SES_ENABLED", os.environ.get("SES_ENABLED", "true")
+                "SES_ENABLED", config.email.ses_enabled
             )
             auth_fn.add_environment(
-                "SES_FROM_EMAIL",
-                os.environ.get("SES_FROM_EMAIL", os.environ.get("FROM_EMAIL", "noreply@contentos.app")),
+                "SES_FROM_EMAIL", config.email.ses_from_email
             )
             auth_fn.add_environment(
-                "FROM_EMAIL",
-                os.environ.get("FROM_EMAIL", os.environ.get("SES_FROM_EMAIL", "noreply@contentos.app")),
+                "FROM_EMAIL", config.email.ses_from_email
             )
             auth_fn.add_environment(
                 "FRONTEND_URL",

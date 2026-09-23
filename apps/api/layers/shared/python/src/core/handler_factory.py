@@ -1,9 +1,13 @@
 from __future__ import annotations
-from typing import Any, Callable
-from core.service_registry import lambda_registry
-from core.router import create_router
+
+from collections.abc import Callable
+from typing import Any
+
 from middleware.error_handler import create_error_response
 from utils.logger import logger
+
+from core.router import create_router
+from core.service_registry import lambda_registry
 
 _states: dict[str, dict[str, Any]] = {}
 

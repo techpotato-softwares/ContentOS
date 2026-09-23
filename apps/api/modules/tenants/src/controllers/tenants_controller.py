@@ -1,13 +1,27 @@
 from __future__ import annotations
+
 import json
 from datetime import datetime, timezone
-from sqlmodel import select
-from decorators import Controller, Get, Post, Put, Delete
-from decorators.auth_decorators import RequirePermission, RequireModule
+
 from database import get_session
 from database.models import Tenant, TrainingDocument
-from middleware.error_handler import NotFoundError, ValidationError, create_success_response
-from utils.tenant import resolve_tenant_id, is_super_admin, require_user, write_audit
+from decorators import Controller, Delete, Get, Post, Put
+from decorators.auth_decorators import RequireModule, RequirePermission
+from middleware.error_handler import (
+    NotFoundError,
+    ValidationError,
+    create_success_response,
+)
+from sqlmodel import select
+from training.schema import (
+    BrandVisualSection,
+    CompanySection,
+    DocumentRef,
+    TenantTrainingSchema,
+    parse_training,
+    render_context_pack,
+    resolve_ui_theme,
+)
 from utils.onboarding import (
     apply_put_patch,
     complete_onboarding_step,
@@ -16,15 +30,7 @@ from utils.onboarding import (
     save_tenant_onboarding,
     sync_onboarding_from_reality,
 )
-from training.schema import (
-    parse_training,
-    render_context_pack,
-    resolve_ui_theme,
-    TenantTrainingSchema,
-    DocumentRef,
-    CompanySection,
-    BrandVisualSection,
-)
+from utils.tenant import is_super_admin, require_user, resolve_tenant_id, write_audit
 
 
 def _tenant_dict(t: Tenant) -> dict:
@@ -353,7 +359,7 @@ class TenantsController:
         ext = ext_map.get(content_type)
         if not ext:
             filename = (data.get("filename") or "logo.png").lower()
-            if filename.endswith(".jpg") or filename.endswith(".jpeg"):
+            if filename.endswith((".jpg", ".jpeg")):
                 ext = "jpg"
             elif filename.endswith(".webp"):
                 ext = "webp"

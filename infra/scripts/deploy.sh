@@ -10,27 +10,8 @@ REPO="$(cd "$ROOT/.." && pwd)"
 
 cd "$ROOT"
 
-PYTHON_BIN="${PYTHON_BIN:-}"
-if [[ -z "$PYTHON_BIN" ]]; then
-  for candidate in python3.12 python3.11 python3; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      PYTHON_BIN="$candidate"
-      break
-    fi
-  done
-fi
-
-if [[ ! -d .venv ]]; then
-  echo "==> Creating infra venv with $PYTHON_BIN"
-  "$PYTHON_BIN" -m venv .venv
-  # shellcheck disable=SC1091
-  source .venv/bin/activate
-  pip install -U pip
-  pip install -r requirements.txt
-else
-  # shellcheck disable=SC1091
-  source .venv/bin/activate
-fi
+echo "==> Syncing infra dependencies with uv"
+uv sync
 
 CDK_BIN=(npx --yes aws-cdk)
 if command -v cdk >/dev/null 2>&1; then
@@ -40,7 +21,7 @@ fi
 export CDK_DEFAULT_ACCOUNT="${CDK_DEFAULT_ACCOUNT:-${AWS_ACCOUNT_ID:-}}"
 export CDK_DEFAULT_REGION="${CDK_DEFAULT_REGION:-${AWS_REGION:-ap-south-1}}"
 
-STACK="$(python -c "from config.environment import get_environment_config; print(get_environment_config('${ENV}').stack_name)")"
+STACK="$(uv run python -c "from config.environment import get_environment_config; print(get_environment_config('${ENV}').stack_name)")"
 
 case "$ACTION" in
   synth) "${CDK_BIN[@]}" synth "$STACK" ;;

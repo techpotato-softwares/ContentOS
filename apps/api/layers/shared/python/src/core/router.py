@@ -1,14 +1,20 @@
 from __future__ import annotations
+
 import re
 from typing import Any
+
 from decorators.registry import route_registry
 from middleware.auth import auth_middleware
 from middleware.error_handler import (
-    create_success_response, create_error_response, handle_options,
-    ValidationError, ForbiddenError,
+    ForbiddenError,
+    ValidationError,
+    create_error_response,
+    create_success_response,
+    handle_options,
 )
-from core.parameter_resolver import resolve_parameters
 from utils.logger import logger
+
+from core.parameter_resolver import resolve_parameters
 
 PUBLIC = {
     ("POST", "/api/login"),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def _pending(fn, **kwargs):
     pending = getattr(fn, "__route_pending__", {})
     pending.update(kwargs)

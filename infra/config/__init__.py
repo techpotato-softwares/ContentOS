@@ -5,8 +5,8 @@ from config.s3_config import S3BucketConfig, S3EnvironmentConfig, get_s3_config
 __all__ = [
     "RDSEnvironmentConfig",
     "RDSScheduleConfig",
-    "get_rds_config",
     "S3BucketConfig",
     "S3EnvironmentConfig",
+    "get_rds_config",
     "get_s3_config",
 ]

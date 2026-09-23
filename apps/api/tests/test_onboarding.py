@@ -20,10 +20,6 @@ os.environ["JWT_SECRET"] = "test-jwt-secret-at-least-32-characters-long"
 os.environ["JWT_REFRESH_SECRET"] = "test-refresh-secret-at-least-32-chars-xx"
 os.environ.pop("DATABASE_URL", None)
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session, SQLModel, select
-
 import database as db_mod
 from database.models import (
     ContentPost,
@@ -35,8 +31,12 @@ from database.models import (
 )
 from modules.platform.src.controllers.auth_controller import _ensure_platform_rbac
 from modules.tenants.src.controllers.tenants_controller import TenantsController
+
 # pyrefly: ignore [missing-module-attribute]
 from passlib.hash import bcrypt
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session, SQLModel, select
 from utils.onboarding import (
     apply_put_patch,
     complete_onboarding_step,

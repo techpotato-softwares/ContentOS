@@ -1,9 +1,13 @@
 from __future__ import annotations
+
 import os
 import time
 from typing import Any, TypedDict
+
 import jwt
+
 from utils.jwt_secrets import get_jwt_secrets
+
 
 class JWTPayload(TypedDict, total=False):
     userId: int

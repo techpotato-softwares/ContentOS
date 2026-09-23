@@ -1,10 +1,12 @@
 from __future__ import annotations
-from sqlmodel import select
-from decorators import Controller, Get, Post, Put, Delete
-from decorators.auth_decorators import RequirePermission, RequireModule
+
 from database import get_session
 from database.models import DemoItem
+from decorators import Controller, Delete, Get, Post, Put
+from decorators.auth_decorators import RequireModule, RequirePermission
 from middleware.error_handler import NotFoundError, create_success_response
+from sqlmodel import select
+
 
 @Controller(path="/api/demo/items", lambda_name="demo")
 class DemoItemController:

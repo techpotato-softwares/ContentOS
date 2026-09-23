@@ -1,31 +1,51 @@
 from __future__ import annotations
+
 import json
 from datetime import datetime, timezone
-from sqlmodel import select, col
-from decorators import Controller, Get, Post
-from decorators.auth_decorators import RequirePermission, RequireModule
+
 from database import get_session
-from database.models import Tenant, ChatSession, ChatMessage, GenerationBatch, ContentPost, TrainingDocument
-from middleware.error_handler import NotFoundError, ValidationError, create_success_response
-from utils.tenant import resolve_tenant_id, write_audit, require_user
-from utils.onboarding import complete_onboarding_step
-from training.schema import parse_training, render_context_pack, DocumentRef
-from modules.agent.src.providers import get_provider, upload_tenant_image, enrich_image_prompt, ANGLES, list_text_providers
-from modules.agent.src.post_schema import (
-    apply_banned_claims,
-    parse_variant_plans,
-    LINKEDIN_PRESETS,
-    DEFAULT_PRESET,
+from database.models import (
+    ChatMessage,
+    ChatSession,
+    ContentPost,
+    GenerationBatch,
+    Tenant,
+    TrainingDocument,
 )
+from decorators import Controller, Get, Post
+from decorators.auth_decorators import RequireModule, RequirePermission
+from middleware.error_handler import (
+    NotFoundError,
+    ValidationError,
+    create_success_response,
+)
+from sqlmodel import col, select
+from training.schema import DocumentRef, parse_training, render_context_pack
+from utils.onboarding import complete_onboarding_step
+from utils.tenant import require_user, resolve_tenant_id, write_audit
+
 from modules.agent.src.compose import (
+    background_looks_empty,
     compose_linkedin_post,
     enrich_background_prompt,
-    background_looks_empty,
 )
 from modules.agent.src.image_providers import (
-    list_image_models,
     get_image_provider,
+    list_image_models,
     nearest_gen_size,
+)
+from modules.agent.src.post_schema import (
+    DEFAULT_PRESET,
+    LINKEDIN_PRESETS,
+    apply_banned_claims,
+    parse_variant_plans,
+)
+from modules.agent.src.providers import (
+    ANGLES,
+    enrich_image_prompt,
+    get_provider,
+    list_text_providers,
+    upload_tenant_image,
 )
 
 
@@ -44,8 +64,8 @@ def _ensure_layout_column():
         ("scheduled_at", "TIMESTAMP"),
     ]
     try:
-        from sqlalchemy import text
         from database import get_engine
+        from sqlalchemy import text
 
         with get_engine().begin() as conn:
             for name, typ in cols:
@@ -512,8 +532,9 @@ class AgentController:
                         # Supporting photo only — no text overlay template
                         bg = img_provider.generate_background(bg_prompt, gen_size)
                         try:
-                            from PIL import Image
                             import io
+
+                            from PIL import Image
 
                             im = Image.open(io.BytesIO(bg)).convert("RGB")
                             im = im.resize((width, height), Image.Resampling.LANCZOS)
@@ -620,8 +641,9 @@ class AgentController:
                         )
                         img = img_provider.generate_background(native_prompt, gen_size)
                         try:
-                            from PIL import Image
                             import io
+
+                            from PIL import Image
 
                             im = Image.open(io.BytesIO(img)).convert("RGB")
                             im = im.resize((width, height), Image.Resampling.LANCZOS)
@@ -922,7 +944,7 @@ class AgentController:
         # Default extract-only so clients can stage attachments; pass generate:true to run now
         generate_now = bool(data.get("generate", False))
 
-        from modules.agent.src.extract import extract_from_url, extract_from_pdf_base64
+        from modules.agent.src.extract import extract_from_pdf_base64, extract_from_url
 
         if url:
             extracted = extract_from_url(url)
@@ -1054,7 +1076,7 @@ class AgentController:
     @RequirePermission("agent:chat", "posts:review", "tenant:admin")
     def weekly_snapshot_preview(self, user=None):
         """Preview this week's team performance stats (no email)."""
-        from modules.agent.src.weekly_snapshot import collect_tenant_stats, _week_window
+        from modules.agent.src.weekly_snapshot import _week_window, collect_tenant_stats
 
         tid = resolve_tenant_id(user)
         start, end = _week_window()

@@ -10,7 +10,9 @@
         { "method": "POST", "path": "/api/login", "controller": "AuthController", "action": "login" },
         { "method": "POST", "path": "/api/auth/refresh", "controller": "AuthController", "action": "refresh" },
         { "method": "POST", "path": "/api/register", "controller": "AuthController", "action": "register" },
-        { "method": "GET", "path": "/api/me", "controller": "AuthController", "action": "me" }
+        { "method": "GET", "path": "/api/me", "controller": "AuthController", "action": "me" },
+        { "method": "POST", "path": "/api/auth/otp/request", "controller": "AuthController", "action": "request_otp" },
+        { "method": "POST", "path": "/api/auth/otp/verify", "controller": "AuthController", "action": "verify_otp" }
       ]
     },
     "tenants": {

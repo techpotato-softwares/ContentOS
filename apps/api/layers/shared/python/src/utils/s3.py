@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 import os
 import uuid
 from dataclasses import dataclass
+
 from config import get_app_config
-from utils.logger import logger
+
 
 @dataclass
 class S3Config:

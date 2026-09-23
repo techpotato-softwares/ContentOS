@@ -1,6 +1,8 @@
 """TenantTrainingSchema v1 — structured company records for consistent generation."""
 from __future__ import annotations
-from typing import Literal, Optional
+
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -33,7 +35,7 @@ class CompanySection(BaseModel):
     hq_location: str = ""
     operating_regions: list[str] = Field(default_factory=list)
     company_size_band: str = ""
-    founded_year: Optional[int] = None
+    founded_year: int | None = None
     one_liner: str = Field(default="", max_length=160)
 
 
